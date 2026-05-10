@@ -48,10 +48,7 @@ impl EmbeddingStore {
 
     pub fn embed_chunks(chunks: &[CodeChunk]) -> Result<Self> {
         let mut store = Self::new(false)?;
-        let texts = chunks
-            .iter()
-            .map(|chunk| chunk.text.as_str())
-            .collect::<Vec<_>>();
+        let texts = chunks.iter().map(contextualize_chunk).collect::<Vec<_>>();
         let embeddings = {
             let mut model = store
                 .model
@@ -138,6 +135,30 @@ pub fn download_embedding_model() -> Result<()> {
 
 pub fn embed_chunks(chunks: &[CodeChunk]) -> Result<EmbeddingStore> {
     EmbeddingStore::embed_chunks(chunks)
+}
+
+fn contextualize_chunk(chunk: &CodeChunk) -> String {
+    let mut parts = Vec::new();
+    parts.push(format!("file: {}", chunk.file_path.display()));
+    parts.push(format!("kind: {}", chunk.kind.as_str()));
+    if let Some(symbol) = &chunk.symbol
+        && !symbol.is_empty()
+    {
+        parts.push(format!("symbol: {symbol}"));
+    }
+    if let Some(parent_symbol) = &chunk.parent_symbol
+        && !parent_symbol.is_empty()
+    {
+        parts.push(format!("parent: {parent_symbol}"));
+    }
+    if let Some(signature) = &chunk.signature
+        && !signature.is_empty()
+    {
+        parts.push(format!("signature: {signature}"));
+    }
+    parts.push(String::new());
+    parts.push(chunk.text.clone());
+    parts.join("\n")
 }
 
 fn embedding_model_downloaded() -> Result<bool> {

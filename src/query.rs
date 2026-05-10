@@ -33,12 +33,23 @@ pub fn analyze_query_with_symbols<'a>(
     let mut downweighted_terms = Vec::new();
     let expansions = Vec::new();
 
+    let has_specific_term = raw_terms.iter().any(|term| {
+        let normalized = term.to_lowercase();
+        let code_like = is_code_like(term);
+        !is_downweighted_term(&normalized)
+            && !is_domain_generic_term(&normalized)
+            && (normalized.len() > 1 || code_like)
+    });
+
     for raw_term in raw_terms {
         let normalized = raw_term.to_lowercase();
         let code_like = is_code_like(&raw_term);
         normalized_terms.push(normalized.clone());
 
-        if is_downweighted_term(&normalized) && !code_like {
+        if (is_downweighted_term(&normalized)
+            || has_specific_term && is_domain_generic_term(&normalized))
+            && !code_like
+        {
             downweighted_terms.push(normalized.clone());
         } else if normalized.len() > 1 || code_like {
             push_unique(&mut important_terms, normalized.clone());
@@ -81,6 +92,10 @@ fn is_code_like(term: &str) -> bool {
         || has_mixed_case(term)
 }
 
+pub(crate) fn is_code_like_for_search(term: &str) -> bool {
+    is_code_like(term)
+}
+
 fn has_mixed_case(term: &str) -> bool {
     term.chars().any(char::is_lowercase) && term.chars().any(char::is_uppercase)
 }
@@ -88,6 +103,23 @@ fn has_mixed_case(term: &str) -> bool {
 fn is_downweighted_term(term: &str) -> bool {
     let len = term.chars().count();
     len <= 3 && term.chars().all(char::is_alphabetic)
+}
+
+fn is_domain_generic_term(term: &str) -> bool {
+    matches!(
+        term,
+        "search"
+            | "searches"
+            | "query"
+            | "queries"
+            | "chunk"
+            | "chunks"
+            | "result"
+            | "results"
+            | "term"
+            | "terms"
+            | "code"
+    )
 }
 
 fn detect_intent<'a>(
@@ -101,6 +133,11 @@ fn detect_intent<'a>(
         .into_iter()
         .filter(|symbol| !symbol.is_empty())
         .any(|symbol| normalized_query.contains(&symbol.to_lowercase()))
+        || normalized_query.contains("definition of")
+        || normalized_query.contains(" defined ")
+        || normalized_query.contains(" variants")
+        || normalized_query.contains("what data is stored")
+        || normalized_query.contains("what fields")
     {
         QueryIntent::FindDefinition
     } else if terms.iter().any(|term| term.contains("test")) {
@@ -133,6 +170,15 @@ mod tests {
         assert!(analyzed.important_terms.contains(&"what".into()));
         assert!(analyzed.important_terms.contains(&"languages".into()));
         assert!(analyzed.important_terms.contains(&"supports".into()));
+    }
+
+    #[test]
+    fn domain_generic_terms_are_downweighted_when_specific_terms_exist() {
+        let analyzed = analyze_query("how are search terms formatted into a quoted comma string");
+        assert!(analyzed.downweighted_terms.contains(&"search".into()));
+        assert!(analyzed.downweighted_terms.contains(&"terms".into()));
+        assert!(analyzed.important_terms.contains(&"quoted".into()));
+        assert!(analyzed.important_terms.contains(&"comma".into()));
     }
 
     #[test]
@@ -169,6 +215,11 @@ mod tests {
         assert_eq!(
             analyze_query("where is ranking implemented").intent,
             QueryIntent::Unknown
+        );
+        assert_eq!(
+            analyze_query("What are the possible Action variants defined in the TUI module?")
+                .intent,
+            QueryIntent::FindDefinition
         );
     }
 }

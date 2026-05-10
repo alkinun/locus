@@ -675,6 +675,8 @@ fn exact_symbol_match(analyzed: &AnalyzedQuery, symbol: &str) -> bool {
             .iter()
             .chain(analyzed.normalized_terms.iter())
             .any(|term| term == symbol)
+        && (analyzed.intent == QueryIntent::FindDefinition
+            || query_has_code_like_term(analyzed, symbol))
 }
 
 fn partial_symbol_match(analyzed: &AnalyzedQuery, symbol: &str) -> bool {
@@ -683,6 +685,13 @@ fn partial_symbol_match(analyzed: &AnalyzedQuery, symbol: &str) -> bool {
             .important_terms
             .iter()
             .any(|term| term.len() > 2 && symbol.contains(term))
+}
+
+fn query_has_code_like_term(analyzed: &AnalyzedQuery, symbol: &str) -> bool {
+    analyzed
+        .raw
+        .split(|ch: char| !(ch.is_alphanumeric() || matches!(ch, '_' | ':' | '.' | '/')))
+        .any(|term| term.to_lowercase() == symbol && crate::query::is_code_like_for_search(term))
 }
 
 fn symbol_match_multiplier(

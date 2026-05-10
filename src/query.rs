@@ -92,10 +92,6 @@ fn is_code_like(term: &str) -> bool {
         || has_mixed_case(term)
 }
 
-pub(crate) fn is_code_like_for_search(term: &str) -> bool {
-    is_code_like(term)
-}
-
 fn has_mixed_case(term: &str) -> bool {
     term.chars().any(char::is_lowercase) && term.chars().any(char::is_uppercase)
 }

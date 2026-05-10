@@ -270,8 +270,8 @@ fn rerank_analyzed_with_context(
     let important_symbol_matches = count_matches(&analyzed.important_terms, &symbol);
     let important_path_matches = count_matches(&analyzed.important_terms, &file_path);
     let exact_symbol_match = exact_symbol_match(&analyzed.normalized_terms, &symbol);
-    let partial_symbol_match = !exact_symbol_match
-        && partial_symbol_match(&analyzed.normalized_terms, &symbol);
+    let partial_symbol_match =
+        !exact_symbol_match && partial_symbol_match(&analyzed.normalized_terms, &symbol);
     let symbol_match_multiplier = symbol_match_multiplier(&analyzed.normalized_terms, &symbol);
     let expansion_matches = count_matches(&analyzed.expansions, &text)
         + count_matches(&analyzed.expansions, &symbol)
@@ -354,11 +354,7 @@ fn reciprocal_rank_fusion(first: &[String], second: &[String]) -> Vec<(String, f
     fused
 }
 
-fn reason(
-    analyzed: &AnalyzedQuery,
-    features: &RankingFeatures,
-    language: &str,
-) -> String {
+fn reason(analyzed: &AnalyzedQuery, features: &RankingFeatures, language: &str) -> String {
     let mut parts = Vec::new();
     let matched_terms = analyzed
         .important_terms
@@ -446,6 +442,9 @@ fn document_to_chunk(
         },
         start_line: u64_value(schema, doc, fields.start_line)? as usize,
         end_line: u64_value(schema, doc, fields.end_line)? as usize,
+        doc_comment: string_value(schema, doc, fields.doc_comment)?,
+        callees: stored_list_value(schema, doc, fields.callees)?,
+        sibling_symbols: stored_list_value(schema, doc, fields.sibling_symbols)?,
         text: string_value(schema, doc, fields.text)?,
     })
 }
@@ -470,6 +469,15 @@ fn u64_value(schema: &Schema, doc: &TantivyDocument, field: Field) -> Result<u64
         OwnedValue::U64(number) => Ok(*number),
         other => Err(anyhow!("field {named} is not u64: {other:?}")),
     }
+}
+
+fn stored_list_value(schema: &Schema, doc: &TantivyDocument, field: Field) -> Result<Vec<String>> {
+    Ok(string_value(schema, doc, field)?
+        .lines()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 fn sanitize_query(query: &str) -> String {
@@ -519,9 +527,9 @@ fn exact_symbol_match(terms: &[String], symbol: &str) -> bool {
 
 fn partial_symbol_match(terms: &[String], symbol: &str) -> bool {
     !symbol.is_empty()
-        && terms.iter().any(|term| {
-            !term.is_empty() && (symbol.contains(term) || term.contains(symbol))
-        })
+        && terms
+            .iter()
+            .any(|term| !term.is_empty() && (symbol.contains(term) || term.contains(symbol)))
 }
 
 fn symbol_match_multiplier(terms: &[String], symbol: &str) -> f32 {
@@ -540,7 +548,6 @@ fn count_matches(terms: &[String], haystack: &str) -> usize {
         .filter(|term| haystack.contains(term.as_str()))
         .count()
 }
-
 
 fn quote_list(terms: &[String]) -> String {
     terms
@@ -574,6 +581,9 @@ mod tests {
             parent_symbol: None,
             start_line: 1,
             end_line: text.lines().count().max(1),
+            doc_comment: String::new(),
+            callees: Vec::new(),
+            sibling_symbols: Vec::new(),
             text: text.into(),
         }
     }

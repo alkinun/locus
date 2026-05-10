@@ -575,6 +575,9 @@ mod tests {
             parent_symbol: None,
             start_line: 1,
             end_line: 5,
+            doc_comment: String::new(),
+            callees: Vec::new(),
+            sibling_symbols: Vec::new(),
             text: "fn target() { search(); }".to_string(),
         }
     }

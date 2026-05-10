@@ -656,6 +656,9 @@ mod tests {
             parent_symbol: None,
             start_line: 1,
             end_line: 8,
+            doc_comment: String::new(),
+            callees: Vec::new(),
+            sibling_symbols: Vec::new(),
             text:
                 "fn sample() {\nlet a = 1;\nlet b = 2;\nlet c = a + b;\nprintln!(\"{}\", c);\n}\n"
                     .to_string(),

@@ -30,19 +30,48 @@ pub fn chunk_file(repo_root: &Path, file_path: &Path, text: &str) -> Vec<CodeChu
         return Vec::new();
     };
     if language == "markdown" {
-        let chunks = markdown_chunks(repo_root, file_path, language, text);
-        return if chunks.is_empty() {
-            fallback_line_chunks(repo_root, file_path, language, text)
-        } else {
-            chunks
-        };
+        let mut chunks = markdown_chunks(repo_root, file_path, language, text);
+        if chunks.is_empty() {
+            chunks = fallback_line_chunks(repo_root, file_path, language, text);
+        }
+        populate_sibling_symbols(&mut chunks);
+        return chunks;
     }
-    if let Some(chunks) = syntax_chunks(repo_root, file_path, language, text) {
+    if let Some(mut chunks) = syntax_chunks(repo_root, file_path, language, text) {
         if !chunks.is_empty() {
+            populate_sibling_symbols(&mut chunks);
             return chunks;
         }
     }
-    fallback_line_chunks(repo_root, file_path, language, text)
+    let mut chunks = fallback_line_chunks(repo_root, file_path, language, text);
+    populate_sibling_symbols(&mut chunks);
+    chunks
+}
+
+pub fn build_chunk_context(chunk: &CodeChunk) -> String {
+    if !chunk.doc_comment.is_empty() {
+        return chunk.doc_comment.clone();
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(stem) = chunk.file_path.file_stem().and_then(|stem| stem.to_str()) {
+        if let Some(symbol) = chunk.symbol.as_deref().filter(|symbol| !symbol.is_empty()) {
+            parts.push(format!("{symbol} in {stem}"));
+        } else {
+            parts.push(stem.to_string());
+        }
+    }
+
+    if !chunk.callees.is_empty() {
+        parts.push(chunk.callees[..chunk.callees.len().min(5)].join(", "));
+    }
+
+    if parts.is_empty() {
+        return String::new();
+    }
+
+    format!("// {}", parts.join(": "))
 }
 
 fn fallback_line_chunks(
@@ -84,6 +113,9 @@ fn fallback_line_chunks(
             parent_symbol: None,
             start_line,
             end_line,
+            doc_comment: String::new(),
+            callees: Vec::new(),
+            sibling_symbols: Vec::new(),
             text: chunk_text,
         });
 
@@ -121,6 +153,8 @@ fn syntax_chunks(
             continue;
         }
         let signature = signature_for(&chunk_text);
+        let doc_comment = extract_doc_comment(&raw_chunk.node, text.as_bytes()).unwrap_or_default();
+        let callees = extract_callees(&raw_chunk.node, text.as_bytes());
         let base = CodeChunk {
             id: stable_id(relative_path, start_line, end_line),
             repo_root: repo_root.to_path_buf(),
@@ -132,6 +166,9 @@ fn syntax_chunks(
             parent_symbol: raw_chunk.parent_symbol,
             start_line,
             end_line,
+            doc_comment,
+            callees,
+            sibling_symbols: Vec::new(),
             text: chunk_text,
         };
         push_safeguarded_chunk(base, &mut chunks);
@@ -306,6 +343,214 @@ fn node_text<'a>(node: Node<'_>, source: &'a [u8]) -> &'a str {
     std::str::from_utf8(&source[node.byte_range()]).unwrap_or_default()
 }
 
+fn extract_doc_comment(node: &Node<'_>, source: &[u8]) -> Option<String> {
+    python_docstring(*node, source).or_else(|| preceding_comment_lines(*node, source))
+}
+
+fn python_docstring(node: Node<'_>, source: &[u8]) -> Option<String> {
+    if !matches!(node.kind(), "function_definition" | "class_definition") {
+        return None;
+    }
+    let body = node.child_by_field_name("body")?;
+    let first = body.named_child(0)?;
+    let string_node = if first.kind() == "expression_statement" {
+        first.named_child(0)?
+    } else {
+        first
+    };
+    (string_node.kind() == "string")
+        .then(|| strip_string_literal(node_text(string_node, source)))
+        .filter(|doc| !doc.trim().is_empty())
+}
+
+fn preceding_comment_lines(node: Node<'_>, source: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(source).ok()?;
+    let lines = text.lines().collect::<Vec<_>>();
+    let mut idx = node.start_position().row;
+    let mut looked_back = 0usize;
+    let mut collected = Vec::new();
+    let mut in_block = false;
+
+    while idx > 0 && looked_back < 10 {
+        idx -= 1;
+        looked_back += 1;
+
+        let line = lines.get(idx)?.trim();
+        if line.is_empty() {
+            break;
+        }
+
+        if in_block {
+            if is_block_comment_line(line) {
+                collected.push(strip_comment_markers(line));
+                if line.contains("/*") {
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
+
+        if line.starts_with("//") {
+            collected.push(strip_comment_markers(line));
+            continue;
+        }
+
+        if line.contains("*/") || is_block_comment_line(line) {
+            collected.push(strip_comment_markers(line));
+            if !line.contains("/*") {
+                in_block = true;
+            }
+            continue;
+        }
+
+        break;
+    }
+
+    if collected.is_empty() {
+        return None;
+    }
+    collected.reverse();
+    let comment = collected
+        .into_iter()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!comment.is_empty()).then_some(comment)
+}
+
+fn is_block_comment_line(line: &str) -> bool {
+    line.starts_with("/*") || line.starts_with('*') || line.ends_with("*/")
+}
+
+fn strip_comment_markers(line: &str) -> String {
+    let mut stripped = line.trim();
+    for prefix in ["///", "//!", "//"] {
+        if let Some(rest) = stripped.strip_prefix(prefix) {
+            return rest.trim().to_string();
+        }
+    }
+    if let Some(rest) = stripped.strip_prefix("/*") {
+        stripped = rest;
+    }
+    if let Some(rest) = stripped.strip_suffix("*/") {
+        stripped = rest;
+    }
+    if let Some(rest) = stripped.strip_prefix('*') {
+        stripped = rest;
+    }
+    stripped.trim().to_string()
+}
+
+fn strip_string_literal(text: &str) -> String {
+    let trimmed = text.trim();
+    let Some(start) = trimmed.find(['"', '\'']) else {
+        return trimmed.to_string();
+    };
+    let literal = &trimmed[start..];
+    for quote in ["\"\"\"", "'''", "\"", "'"] {
+        if let Some(inner) = literal
+            .strip_prefix(quote)
+            .and_then(|value| value.strip_suffix(quote))
+        {
+            return inner.trim().to_string();
+        }
+    }
+    literal.to_string()
+}
+
+fn extract_callees(node: &Node<'_>, source: &[u8]) -> Vec<String> {
+    let own_symbol = symbol_for_node(*node, source);
+    let mut callees = Vec::new();
+    collect_callees(*node, source, own_symbol.as_deref(), &mut callees);
+    callees
+}
+
+fn collect_callees(
+    node: Node<'_>,
+    source: &[u8],
+    own_symbol: Option<&str>,
+    callees: &mut Vec<String>,
+) {
+    if matches!(node.kind(), "call_expression" | "call")
+        && let Some(target) = node
+            .child_by_field_name("function")
+            .or_else(|| node.named_child(0))
+        && let Some(name) = callee_name(target, source)
+    {
+        push_unique_callee(callees, name, own_symbol);
+    }
+
+    if callees.len() >= 15 {
+        return;
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_callees(child, source, own_symbol, callees);
+        if callees.len() >= 15 {
+            break;
+        }
+    }
+}
+
+fn callee_name(node: Node<'_>, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "identifier" | "field_identifier" | "property_identifier" => {
+            Some(node_text(node, source).to_string())
+        }
+        "attribute" | "field_expression" => node
+            .child_by_field_name("attribute")
+            .or_else(|| node.child_by_field_name("field"))
+            .map(|child| node_text(child, source).to_string())
+            .or_else(|| Some(normalize_member_name(node_text(node, source)))),
+        "member_expression" => Some(normalize_member_name(node_text(node, source))),
+        "scoped_identifier" | "generic_function" => last_identifier_descendant(node, source),
+        _ if node.named_child_count() > 0 => node
+            .named_child(0)
+            .and_then(|child| callee_name(child, source)),
+        _ => None,
+    }
+}
+
+fn last_identifier_descendant(node: Node<'_>, source: &[u8]) -> Option<String> {
+    if matches!(
+        node.kind(),
+        "identifier" | "field_identifier" | "property_identifier"
+    ) {
+        return Some(node_text(node, source).to_string());
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .filter_map(|child| last_identifier_descendant(child, source))
+        .last()
+}
+
+fn normalize_member_name(value: &str) -> String {
+    value.split_whitespace().collect::<String>()
+}
+
+fn push_unique_callee(callees: &mut Vec<String>, name: String, own_symbol: Option<&str>) {
+    let name = name.trim();
+    if name.len() <= 3 || own_symbol.is_some_and(|symbol| symbol == name) {
+        return;
+    }
+    if !callees.iter().any(|callee| callee == name) {
+        callees.push(name.to_string());
+    }
+}
+
+fn symbol_for_node(node: Node<'_>, source: &[u8]) -> Option<String> {
+    node.child_by_field_name("name")
+        .map(|name| node_text(name, source).to_string())
+        .or_else(|| match node.kind() {
+            "impl_item" => Some(rust_impl_symbol(node, source)),
+            "lexical_declaration" | "variable_declaration" => js_decl_symbol(node, source),
+            _ => None,
+        })
+}
+
 fn markdown_chunks(
     repo_root: &Path,
     file_path: &Path,
@@ -343,6 +588,9 @@ fn markdown_chunks(
             parent_symbol: None,
             start_line: start + 1,
             end_line: end,
+            doc_comment: String::new(),
+            callees: Vec::new(),
+            sibling_symbols: Vec::new(),
             text: chunk_text,
         };
         push_safeguarded_chunk(chunk, &mut chunks);
@@ -383,6 +631,34 @@ fn push_safeguarded_chunk(chunk: CodeChunk, chunks: &mut Vec<CodeChunk>) {
             break;
         }
         start = end.saturating_sub(OVERLAP_LINES);
+    }
+}
+
+fn populate_sibling_symbols(chunks: &mut [CodeChunk]) {
+    let symbols = chunks
+        .iter()
+        .map(|chunk| chunk.symbol.clone().unwrap_or_default())
+        .collect::<Vec<_>>();
+    let sibling_symbols = symbols
+        .iter()
+        .enumerate()
+        .map(|(idx, _)| {
+            let mut siblings = Vec::new();
+            for (other_idx, symbol) in symbols.iter().enumerate() {
+                if idx == other_idx || symbol.is_empty() || siblings.contains(symbol) {
+                    continue;
+                }
+                siblings.push(symbol.clone());
+                if siblings.len() >= 10 {
+                    break;
+                }
+            }
+            siblings
+        })
+        .collect::<Vec<_>>();
+
+    for (chunk, siblings) in chunks.iter_mut().zip(sibling_symbols) {
+        chunk.sibling_symbols = siblings;
     }
 }
 
@@ -664,6 +940,74 @@ class Searcher:
             chunks.iter().any(|chunk| chunk.kind == ChunkKind::Class
                 && chunk.symbol.as_deref() == Some("Searcher"))
         );
+    }
+
+    #[test]
+    fn syntax_chunks_extract_context_signals() {
+        let source = r#"
+/// Builds the search index.
+/// Keeps embeddings in sync.
+fn build_index() {
+    helper_call();
+    render_results();
+}
+
+fn helper_call() {}
+fn render_results() {}
+"#;
+        let chunks = chunk_file(Path::new("/repo"), Path::new("/repo/src/lib.rs"), source);
+        let chunk = chunks
+            .iter()
+            .find(|chunk| chunk.symbol.as_deref() == Some("build_index"))
+            .expect("build_index chunk");
+
+        assert_eq!(
+            chunk.doc_comment,
+            "Builds the search index.\nKeeps embeddings in sync."
+        );
+        assert_eq!(chunk.callees, ["helper_call", "render_results"]);
+        assert_eq!(
+            chunk.sibling_symbols,
+            ["helper_call".to_string(), "render_results".to_string()]
+        );
+    }
+
+    #[test]
+    fn python_docstrings_become_doc_comments() {
+        let source = r#"
+def rank_results():
+    """Rank search results by score."""
+    return search_index()
+"#;
+        let chunks = chunk_file(Path::new("/repo"), Path::new("/repo/search.py"), source);
+        let chunk = chunks
+            .iter()
+            .find(|chunk| chunk.symbol.as_deref() == Some("rank_results"))
+            .expect("rank_results chunk");
+
+        assert_eq!(chunk.doc_comment, "Rank search results by score.");
+        assert_eq!(chunk.callees, ["search_index"]);
+    }
+
+    #[test]
+    fn javascript_block_comments_and_member_callees_are_extracted() {
+        let source = r#"
+/**
+ * Runs the ranked search.
+ */
+function runSearch() {
+  client.search();
+  renderResults();
+}
+"#;
+        let chunks = chunk_file(Path::new("/repo"), Path::new("/repo/src/search.js"), source);
+        let chunk = chunks
+            .iter()
+            .find(|chunk| chunk.symbol.as_deref() == Some("runSearch"))
+            .expect("runSearch chunk");
+
+        assert_eq!(chunk.doc_comment, "Runs the ranked search.");
+        assert_eq!(chunk.callees, ["client.search", "renderResults"]);
     }
 
     #[test]

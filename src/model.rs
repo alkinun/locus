@@ -67,6 +67,9 @@ pub struct CodeChunk {
     pub parent_symbol: Option<String>,
     pub start_line: usize,
     pub end_line: usize,
+    pub doc_comment: String,
+    pub callees: Vec<String>,
+    pub sibling_symbols: Vec<String>,
     pub text: String,
 }
 

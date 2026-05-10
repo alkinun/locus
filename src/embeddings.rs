@@ -7,6 +7,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use serde::{Deserialize, Serialize};
 
+use crate::chunker::build_chunk_context;
 use crate::model::CodeChunk;
 
 const EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel::JinaEmbeddingsV2BaseCode;
@@ -72,7 +73,8 @@ impl EmbeddingStore {
             return Ok(Vec::new());
         }
 
-        let query_vector = normalize(self.embed_query(query)?);
+        let prefixed_query = format!("Represent this query for searching relevant code: {query}");
+        let query_vector = normalize(self.embed_query(&prefixed_query)?);
         let mut scored = self
             .vectors
             .iter()
@@ -138,27 +140,11 @@ pub fn embed_chunks(chunks: &[CodeChunk]) -> Result<EmbeddingStore> {
 }
 
 fn contextualize_chunk(chunk: &CodeChunk) -> String {
-    let mut parts = Vec::new();
-    parts.push(format!("file: {}", chunk.file_path.display()));
-    parts.push(format!("kind: {}", chunk.kind.as_str()));
-    if let Some(symbol) = &chunk.symbol
-        && !symbol.is_empty()
-    {
-        parts.push(format!("symbol: {symbol}"));
+    let context = build_chunk_context(chunk);
+    if context.is_empty() {
+        return chunk.text.clone();
     }
-    if let Some(parent_symbol) = &chunk.parent_symbol
-        && !parent_symbol.is_empty()
-    {
-        parts.push(format!("parent: {parent_symbol}"));
-    }
-    if let Some(signature) = &chunk.signature
-        && !signature.is_empty()
-    {
-        parts.push(format!("signature: {signature}"));
-    }
-    parts.push(String::new());
-    parts.push(chunk.text.clone());
-    parts.join("\n")
+    format!("{}\n{}", context, chunk.text)
 }
 
 fn embedding_model_downloaded() -> Result<bool> {

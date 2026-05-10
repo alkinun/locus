@@ -100,6 +100,9 @@ pub fn index_repo(path: &Path, download_embedding: bool) -> Result<IndexSummary>
             fields.heading_or_symbol => heading_or_symbol,
             fields.start_line => chunk.start_line as u64,
             fields.end_line => chunk.end_line as u64,
+            fields.doc_comment => chunk.doc_comment.clone(),
+            fields.callees => chunk.callees.join("\n"),
+            fields.sibling_symbols => chunk.sibling_symbols.join("\n"),
             fields.text => chunk.text.clone(),
         ))?;
     }
@@ -133,6 +136,9 @@ pub fn build_schema() -> Schema {
     builder.add_text_field("heading_or_symbol", TEXT | STORED);
     builder.add_u64_field("start_line", STORED);
     builder.add_u64_field("end_line", STORED);
+    builder.add_text_field("doc_comment", STORED);
+    builder.add_text_field("callees", STORED);
+    builder.add_text_field("sibling_symbols", STORED);
     builder.add_text_field("text", TEXT | STORED);
     builder.build()
 }
@@ -178,6 +184,9 @@ pub struct IndexFields {
     pub heading_or_symbol: tantivy::schema::Field,
     pub start_line: tantivy::schema::Field,
     pub end_line: tantivy::schema::Field,
+    pub doc_comment: tantivy::schema::Field,
+    pub callees: tantivy::schema::Field,
+    pub sibling_symbols: tantivy::schema::Field,
     pub text: tantivy::schema::Field,
 }
 
@@ -200,6 +209,11 @@ impl IndexFields {
                 .expect("heading_or_symbol field"),
             start_line: schema.get_field("start_line").expect("start_line field"),
             end_line: schema.get_field("end_line").expect("end_line field"),
+            doc_comment: schema.get_field("doc_comment").expect("doc_comment field"),
+            callees: schema.get_field("callees").expect("callees field"),
+            sibling_symbols: schema
+                .get_field("sibling_symbols")
+                .expect("sibling_symbols field"),
             text: schema.get_field("text").expect("text field"),
         }
     }

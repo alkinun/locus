@@ -449,6 +449,9 @@ mod tests {
             parent_symbol: None,
             start_line: 1,
             end_line: text.lines().count().max(1),
+            doc_comment: String::new(),
+            callees: Vec::new(),
+            sibling_symbols: Vec::new(),
             text: text.into(),
         }
     }

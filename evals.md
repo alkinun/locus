@@ -1,41 +1,41 @@
 ```
 locus eval
 
-Dataset: evals/locus.synthetic.yaml
-Repo: /home/alkinunl/Desktop/locus
-Queries: 100
+Dataset: /home/alkinunl/Desktop/locus-eval-codebase/evals/generated.yaml
+Repo: /home/alkinunl/Desktop/locus-eval-codebase
+Queries: 192
 Limit: 10
 Embeddings: disabled
 
 Overall:
-  Recall@1:   19.0%
-  Recall@3:   34.0%
-  Recall@5:   47.0%
-  Recall@10:  60.0%
-  MRR:        0.30
-  nDCG@5:     0.33
-  nDCG@10:    0.37
-  p50:        81 ms
-  p95:        127 ms
-  max:        147 ms
+  Recall@1:   9.9%
+  Recall@3:   23.4%
+  Recall@5:   30.7%
+  Recall@10:  43.8%
+  MRR:        0.19
+  nDCG@5:     0.21
+  nDCG@10:    0.26
+  p50:        9 ms
+  p95:        14 ms
+  max:        24 ms
 
 By style:
-  AgentTask              n=13   R@5  53.8%   MRR 0.24   nDCG@5 0.30
-  Architecture           n=3    R@5   0.0%   MRR 0.05   nDCG@5 0.00
-  CasualVague            n=12   R@5  25.0%   MRR 0.08   nDCG@5 0.11
-  ChangeTarget           n=14   R@5  64.3%   MRR 0.24   nDCG@5 0.34
-  ConfigFinding          n=1    R@5   0.0%   MRR 0.00   nDCG@5 0.00
-  DebuggingSymptom       n=18   R@5  38.9%   MRR 0.32   nDCG@5 0.30
-  DefinitionQuestion     n=6    R@5  83.3%   MRR 0.83   nDCG@5 0.83
-  FuzzyImplementation    n=14   R@5  35.7%   MRR 0.14   nDCG@5 0.18
-  TestFinding            n=10   R@5 100.0%   MRR 0.93   nDCG@5 0.95
-  UsageQuestion          n=9    R@5  11.1%   MRR 0.03   nDCG@5 0.04
+  AgentTask              n=21   R@5  33.3%   MRR 0.19   nDCG@5 0.21
+  Architecture           n=2    R@5   0.0%   MRR 0.00   nDCG@5 0.00
+  Capability             n=2    R@5   0.0%   MRR 0.12   nDCG@5 0.00
+  CasualVague            n=38   R@5  21.1%   MRR 0.17   nDCG@5 0.16
+  ChangeTarget           n=53   R@5  20.8%   MRR 0.12   nDCG@5 0.13
+  ConfigFinding          n=2    R@5  50.0%   MRR 0.25   nDCG@5 0.32
+  DebuggingSymptom       n=26   R@5  57.7%   MRR 0.34   nDCG@5 0.39
+  DefinitionQuestion     n=3    R@5  33.3%   MRR 0.38   nDCG@5 0.33
+  DocsQuestion           n=2    R@5  50.0%   MRR 0.17   nDCG@5 0.25
+  FuzzyImplementation    n=41   R@5  34.1%   MRR 0.21   nDCG@5 0.24
+  UsageQuestion          n=2    R@5  50.0%   MRR 0.12   nDCG@5 0.22
 
 By intent:
-  architecture           n=1    R@5   0.0%   MRR 0.14   nDCG@5 0.00
-  debugging              n=1    R@5 100.0%   MRR 1.00   nDCG@5 1.00
-  implementation         n=97   R@5  47.4%   MRR 0.30   nDCG@5 0.33
-  usage                  n=1    R@5   0.0%   MRR 0.11   nDCG@5 0.00
+  architecture           n=1    R@5   0.0%   MRR 0.00   nDCG@5 0.00
+  implementation         n=189  R@5  30.7%   MRR 0.19   nDCG@5 0.21
+  usage                  n=2    R@5  50.0%   MRR 0.12   nDCG@5 0.22
 ```
 
 ---
@@ -43,39 +43,39 @@ By intent:
 ```
 locus eval
 
-Dataset: evals/locus.synthetic.yaml
-Repo: /home/alkinunl/Desktop/locus
-Queries: 100
+Dataset: /home/alkinunl/Desktop/locus-eval-codebase/evals/generated.yaml
+Repo: /home/alkinunl/Desktop/locus-eval-codebase
+Queries: 192
 Limit: 10
 Embeddings: enabled
 
 Overall:
-  Recall@1:   43.0%
-  Recall@3:   63.0%
-  Recall@5:   70.0%
-  Recall@10:  80.0%
-  MRR:        0.55
-  nDCG@5:     0.58
-  nDCG@10:    0.62
-  p50:        130 ms
-  p95:        181 ms
-  max:        199 ms
+  Recall@1:   35.4%
+  Recall@3:   57.3%
+  Recall@5:   66.1%
+  Recall@10:  75.0%
+  MRR:        0.48
+  nDCG@5:     0.52
+  nDCG@10:    0.55
+  p50:        50 ms
+  p95:        64 ms
+  max:        112 ms
 
 By style:
-  AgentTask              n=13   R@5  76.9%   MRR 0.47   nDCG@5 0.54
-  Architecture           n=3    R@5  66.7%   MRR 0.22   nDCG@5 0.33
-  CasualVague            n=12   R@5  50.0%   MRR 0.26   nDCG@5 0.31
-  ChangeTarget           n=14   R@5  78.6%   MRR 0.63   nDCG@5 0.64
-  ConfigFinding          n=1    R@5   0.0%   MRR 0.00   nDCG@5 0.00
-  DebuggingSymptom       n=18   R@5  72.2%   MRR 0.57   nDCG@5 0.60
-  DefinitionQuestion     n=6    R@5 100.0%   MRR 0.92   nDCG@5 0.94
-  FuzzyImplementation    n=14   R@5  64.3%   MRR 0.57   nDCG@5 0.58
-  TestFinding            n=10   R@5 100.0%   MRR 1.00   nDCG@5 1.00
-  UsageQuestion          n=9    R@5  33.3%   MRR 0.32   nDCG@5 0.29
+  AgentTask              n=21   R@5  81.0%   MRR 0.54   nDCG@5 0.60
+  Architecture           n=2    R@5  50.0%   MRR 0.20   nDCG@5 0.22
+  Capability             n=2    R@5 100.0%   MRR 1.00   nDCG@5 1.00
+  CasualVague            n=38   R@5  39.5%   MRR 0.27   nDCG@5 0.30
+  ChangeTarget           n=53   R@5  69.8%   MRR 0.51   nDCG@5 0.55 
+  ConfigFinding          n=2    R@5  50.0%   MRR 0.50   nDCG@5 0.50
+  DebuggingSymptom       n=26   R@5  76.9%   MRR 0.60   nDCG@5 0.63
+  DefinitionQuestion     n=3    R@5 100.0%   MRR 0.83   nDCG@5 0.88
+  DocsQuestion           n=2    R@5  50.0%   MRR 0.50   nDCG@5 0.50
+  FuzzyImplementation    n=41   R@5  68.3%   MRR 0.52   nDCG@5 0.55
+  UsageQuestion          n=2    R@5 100.0%   MRR 0.23   nDCG@5 0.60
 
 By intent:
-  architecture           n=1    R@5 100.0%   MRR 0.33   nDCG@5 0.50
-  debugging              n=1    R@5 100.0%   MRR 1.00   nDCG@5 1.00
-  implementation         n=97   R@5  69.1%   MRR 0.54   nDCG@5 0.57
-  usage                  n=1    R@5 100.0%   MRR 1.00   nDCG@5 1.00
+  architecture           n=1    R@5   0.0%   MRR 0.14   nDCG@5 0.00
+  implementation         n=189  R@5  66.1%   MRR 0.49   nDCG@5 0.53
+  usage                  n=2    R@5 100.0%   MRR 0.23   nDCG@5 0.60
 ```

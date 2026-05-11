@@ -11,6 +11,7 @@ use crate::chunker::build_chunk_context;
 use crate::model::CodeChunk;
 
 const EMBEDDING_MODEL: EmbeddingModel = EmbeddingModel::JinaEmbeddingsV2BaseCode;
+pub const DEFAULT_EMBEDDING_BATCH_SIZE: usize = 32;
 const TOKENIZER_FILES: &[&str] = &[
     "tokenizer.json",
     "config.json",
@@ -21,6 +22,14 @@ const TOKENIZER_FILES: &[&str] = &[
 pub struct EmbeddingStore {
     model: Mutex<TextEmbedding>,
     vectors: Vec<(String, Vec<f32>)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmbeddingProgress {
+    pub embedded_chunks: usize,
+    pub total_chunks: usize,
+    pub batch: usize,
+    pub total_batches: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,24 +57,71 @@ impl EmbeddingStore {
     }
 
     pub fn embed_chunks(chunks: &[CodeChunk]) -> Result<Self> {
-        let mut store = Self::new(false)?;
-        let texts = chunks.iter().map(contextualize_chunk).collect::<Vec<_>>();
-        let embeddings = {
-            let mut model = store
-                .model
-                .lock()
-                .map_err(|_| anyhow!("embedding model mutex poisoned"))?;
-            model
-                .embed(texts, None)
-                .context("failed to embed code chunks")?
-        };
+        Self::embed_chunks_batched(chunks, DEFAULT_EMBEDDING_BATCH_SIZE, |_| {})
+    }
 
-        store.vectors = chunks
-            .iter()
-            .zip(embeddings)
-            .map(|(chunk, vector)| (chunk.id.clone(), normalize(vector)))
-            .collect();
+    pub fn embed_chunks_batched(
+        chunks: &[CodeChunk],
+        batch_size: usize,
+        mut progress: impl FnMut(EmbeddingProgress),
+    ) -> Result<Self> {
+        if batch_size == 0 {
+            bail!("embedding batch size must be greater than zero");
+        }
+
+        let mut store = Self::new(false)?;
+        let total_chunks = chunks.len();
+        let total_batches = total_chunks.div_ceil(batch_size);
+        let mut embedded_chunks = 0usize;
+        let mut vectors = Vec::with_capacity(total_chunks);
+
+        for (batch_index, chunk_batch) in chunks.chunks(batch_size).enumerate() {
+            let texts = chunk_batch
+                .iter()
+                .map(contextualize_chunk)
+                .collect::<Vec<_>>();
+            let embeddings = {
+                let mut model = store
+                    .model
+                    .lock()
+                    .map_err(|_| anyhow!("embedding model mutex poisoned"))?;
+                model
+                    .embed(texts, None)
+                    .context("failed to embed code chunks")?
+            };
+
+            if embeddings.len() != chunk_batch.len() {
+                bail!(
+                    "embedding model returned {} vectors for {} chunks",
+                    embeddings.len(),
+                    chunk_batch.len()
+                );
+            }
+
+            vectors.extend(
+                chunk_batch
+                    .iter()
+                    .zip(embeddings)
+                    .map(|(chunk, vector)| (chunk.id.clone(), normalize(vector))),
+            );
+            embedded_chunks += chunk_batch.len();
+            progress(EmbeddingProgress {
+                embedded_chunks,
+                total_chunks,
+                batch: batch_index + 1,
+                total_batches,
+            });
+        }
+
+        store.vectors = vectors;
         Ok(store)
+    }
+
+    pub fn embed_chunks_with_progress(
+        chunks: &[CodeChunk],
+        progress: impl FnMut(EmbeddingProgress),
+    ) -> Result<Self> {
+        Self::embed_chunks_batched(chunks, DEFAULT_EMBEDDING_BATCH_SIZE, progress)
     }
 
     pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<(String, f32)>> {
@@ -137,6 +193,13 @@ pub fn download_embedding_model() -> Result<()> {
 
 pub fn embed_chunks(chunks: &[CodeChunk]) -> Result<EmbeddingStore> {
     EmbeddingStore::embed_chunks(chunks)
+}
+
+pub fn embed_chunks_with_progress(
+    chunks: &[CodeChunk],
+    progress: impl FnMut(EmbeddingProgress),
+) -> Result<EmbeddingStore> {
+    EmbeddingStore::embed_chunks_with_progress(chunks, progress)
 }
 
 fn contextualize_chunk(chunk: &CodeChunk) -> String {

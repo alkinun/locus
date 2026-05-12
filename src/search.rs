@@ -16,6 +16,10 @@ use crate::repo_meta::{
     RepoMetadata, expand_with_repo_metadata, read_metadata, repo_vocab_overlap,
 };
 
+const CANDIDATE_MULTIPLIER: usize = 12;
+const MIN_CANDIDATES: usize = 100;
+const MAX_CANDIDATES: usize = 500;
+
 #[derive(Debug, Clone)]
 pub struct SearchSummary {
     pub results: Vec<RankedChunk>,
@@ -182,7 +186,7 @@ impl SearchSession {
         let parsed = parser
             .parse_query(&search_query)
             .or_else(|_| parser.parse_query(&sanitize_query(&search_query)))?;
-        let candidate_limit = limit.saturating_mul(4).max(limit);
+        let candidate_limit = candidate_limit(limit);
         let top_docs = searcher.search(&parsed, &TopDocs::with_limit(candidate_limit))?;
 
         let mut ranked = Vec::new();
@@ -335,6 +339,18 @@ fn load_chunks_from_index(
         chunks.push(document_to_chunk(&schema, fields, &doc)?);
     }
     Ok(chunks)
+}
+
+fn candidate_limit(result_limit: usize) -> usize {
+    if result_limit == 0 {
+        return 0;
+    }
+
+    result_limit
+        .saturating_mul(CANDIDATE_MULTIPLIER)
+        .max(MIN_CANDIDATES)
+        .min(MAX_CANDIDATES)
+        .max(result_limit)
 }
 
 fn reciprocal_rank_fusion(first: &[String], second: &[String]) -> Vec<(String, f32)> {
@@ -586,6 +602,15 @@ mod tests {
             sibling_symbols: Vec::new(),
             text: text.into(),
         }
+    }
+
+    #[test]
+    fn candidate_pool_is_wider_than_requested_limit() {
+        assert_eq!(candidate_limit(0), 0);
+        assert_eq!(candidate_limit(5), MIN_CANDIDATES);
+        assert_eq!(candidate_limit(10), 120);
+        assert_eq!(candidate_limit(100), 500);
+        assert_eq!(candidate_limit(600), 600);
     }
 
     #[test]

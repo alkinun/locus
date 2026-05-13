@@ -235,7 +235,7 @@ fn embedding_model_downloaded() -> Result<bool> {
     Ok(model_present && tokenizer_present && additional_present)
 }
 
-fn embedding_cache_dir() -> PathBuf {
+pub(crate) fn model_cache_dir() -> PathBuf {
     if let Ok(path) = env::var("HF_HOME") {
         return path.into();
     }
@@ -246,6 +246,10 @@ fn embedding_cache_dir() -> PathBuf {
         return PathBuf::from(home).join(".cache").join("fastembed");
     }
     PathBuf::from(".fastembed_cache")
+}
+
+fn embedding_cache_dir() -> PathBuf {
+    model_cache_dir()
 }
 
 fn normalize(mut vector: Vec<f32>) -> Vec<f32> {

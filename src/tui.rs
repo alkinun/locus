@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wra
 use crate::model::{ChunkKind, RankedChunk, SearchResult};
 use crate::output::{GroupedResults, group_ranked_results};
 use crate::query::{AnalyzedQuery, QueryIntent};
-use crate::search::SearchSession;
+use crate::search::{DEFAULT_RERANK_INPUT_LIMIT, SearchOptions, SearchSession};
 
 const SEARCH_LIMIT: usize = 40;
 const DEBOUNCE: Duration = Duration::from_millis(75);
@@ -37,7 +37,14 @@ pub fn run_tui(repo_path: PathBuf) -> Result<()> {
         return Ok(());
     }
 
-    let session = SearchSession::open(&repo_path)?;
+    let session = SearchSession::open_with_options(
+        &repo_path,
+        SearchOptions {
+            use_embeddings: true,
+            use_reranker: true,
+            rerank_limit: DEFAULT_RERANK_INPUT_LIMIT,
+        },
+    )?;
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();

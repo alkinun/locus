@@ -8,6 +8,7 @@ pub mod model;
 pub mod output;
 pub mod query;
 pub mod repo_meta;
+pub mod reranker;
 pub mod search;
 pub mod tui;
 
@@ -72,6 +73,8 @@ pub fn refresh_access_token() {
             dir.path(),
             SearchOptions {
                 use_embeddings: false,
+                use_reranker: false,
+                rerank_limit: 0,
             },
         )
         .expect("open without embeddings");

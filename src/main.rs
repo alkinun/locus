@@ -8,7 +8,8 @@ use locus::output::{
     group_ranked_results, print_human_grouped_results, print_human_results, print_index_summary,
     print_json_grouped_results, print_json_results,
 };
-use locus::search::search_repo;
+use locus::reranker::download_reranker_model;
+use locus::search::{SearchOptions, search_repo_with_options};
 use locus::tui::run_tui;
 
 fn main() -> Result<()> {
@@ -19,7 +20,12 @@ fn main() -> Result<()> {
             Command::Index {
                 path,
                 download_embedding,
+                download_reranker,
             } => {
+                if download_reranker {
+                    eprintln!("Downloading jina-reranker-v1-turbo-en if needed...");
+                    download_reranker_model()?;
+                }
                 let summary = index_repo(&path, download_embedding)?;
                 print_index_summary(&summary);
             }
@@ -29,8 +35,19 @@ fn main() -> Result<()> {
                 limit,
                 json,
                 grouped,
+                rerank,
+                rerank_limit,
             } => {
-                let summary = search_repo(&path, &query, limit)?;
+                let summary = search_repo_with_options(
+                    &path,
+                    &query,
+                    limit,
+                    SearchOptions {
+                        use_embeddings: true,
+                        use_reranker: rerank,
+                        rerank_limit,
+                    },
+                )?;
                 if json && grouped {
                     let grouped_results = group_ranked_results(&summary.results);
                     print_json_grouped_results(grouped_results)?;
@@ -91,6 +108,8 @@ fn main() -> Result<()> {
                 limit,
                 embedding,
                 no_embedding,
+                rerank,
+                rerank_limit,
                 json,
                 failures,
             } => {
@@ -99,6 +118,8 @@ fn main() -> Result<()> {
                     dataset,
                     limit,
                     use_embeddings: embedding && !no_embedding,
+                    use_reranker: rerank,
+                    rerank_limit,
                     failures,
                 })?;
                 if json {

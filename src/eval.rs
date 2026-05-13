@@ -15,6 +15,8 @@ pub struct EvalOptions {
     pub dataset: PathBuf,
     pub limit: usize,
     pub use_embeddings: bool,
+    pub use_reranker: bool,
+    pub rerank_limit: usize,
     pub failures: usize,
 }
 
@@ -78,6 +80,7 @@ pub struct EvalReport {
     pub queries: usize,
     pub limit: usize,
     pub use_embeddings: bool,
+    pub use_reranker: bool,
     pub overall: MetricSummary,
     pub by_style: BTreeMap<String, MetricSummary>,
     pub by_intent: BTreeMap<String, MetricSummary>,
@@ -147,6 +150,8 @@ pub fn run_eval(options: EvalOptions) -> Result<EvalReport> {
         &repo_root,
         SearchOptions {
             use_embeddings: options.use_embeddings,
+            use_reranker: options.use_reranker,
+            rerank_limit: options.rerank_limit,
         },
     )?;
     let mut query_evals = Vec::with_capacity(dataset.items.len());
@@ -163,6 +168,7 @@ pub fn run_eval(options: EvalOptions) -> Result<EvalReport> {
         queries: query_evals.len(),
         limit: options.limit,
         use_embeddings: options.use_embeddings,
+        use_reranker: options.use_reranker,
         overall: summarize_metrics(&query_evals),
         by_style: summarize_by(&query_evals, |item| item.style.as_deref()),
         by_intent: summarize_by(&query_evals, |item| item.intent.as_deref()),
@@ -467,6 +473,14 @@ pub fn print_human_report(report: &EvalReport) {
     println!(
         "Embeddings: {}",
         if report.use_embeddings {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
+        "Reranker:   {}",
+        if report.use_reranker {
             "enabled"
         } else {
             "disabled"

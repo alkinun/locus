@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::search::DEFAULT_RERANK_INPUT_LIMIT;
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -20,6 +21,8 @@ pub enum Command {
         path: PathBuf,
         #[arg(long = "download_embedding")]
         download_embedding: bool,
+        #[arg(long = "download-reranker")]
+        download_reranker: bool,
     },
     /// Generate a synthetic retrieval eval dataset from indexed chunks.
     GenerateEval {
@@ -51,6 +54,10 @@ pub enum Command {
         #[arg(long = "no-embedding", action = ArgAction::SetTrue)]
         no_embedding: bool,
         #[arg(long)]
+        rerank: bool,
+        #[arg(long = "rerank-limit", default_value_t = DEFAULT_RERANK_INPUT_LIMIT)]
+        rerank_limit: usize,
+        #[arg(long)]
         json: bool,
         #[arg(long, default_value_t = 10)]
         failures: usize,
@@ -66,5 +73,9 @@ pub enum Command {
         json: bool,
         #[arg(long)]
         grouped: bool,
+        #[arg(long)]
+        rerank: bool,
+        #[arg(long = "rerank-limit", default_value_t = DEFAULT_RERANK_INPUT_LIMIT)]
+        rerank_limit: usize,
     },
 }

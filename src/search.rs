@@ -15,10 +15,12 @@ use crate::query::{AnalyzedQuery, analyze_query, analyze_query_with_symbols};
 use crate::repo_meta::{
     RepoMetadata, expand_with_repo_metadata, read_metadata, repo_vocab_overlap,
 };
+use crate::reranker::CrossEncoderReranker;
 
 const CANDIDATE_MULTIPLIER: usize = 12;
 const MIN_CANDIDATES: usize = 100;
 const MAX_CANDIDATES: usize = 500;
+pub const DEFAULT_RERANK_INPUT_LIMIT: usize = 25;
 
 #[derive(Debug, Clone)]
 pub struct SearchSummary {
@@ -34,17 +36,23 @@ pub struct SearchSession {
     meta: RepoMetadata,
     chunks_by_id: HashMap<String, CodeChunk>,
     embeddings: Option<EmbeddingStore>,
+    reranker: Option<CrossEncoderReranker>,
+    rerank_limit: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct SearchOptions {
     pub use_embeddings: bool,
+    pub use_reranker: bool,
+    pub rerank_limit: usize,
 }
 
 impl Default for SearchOptions {
     fn default() -> Self {
         Self {
             use_embeddings: true,
+            use_reranker: false,
+            rerank_limit: DEFAULT_RERANK_INPUT_LIMIT,
         }
     }
 }
@@ -64,6 +72,15 @@ pub struct RankingFeatures {
 }
 
 pub fn search_repo(repo_root: &Path, query: &str, limit: usize) -> Result<SearchSummary> {
+    search_repo_with_options(repo_root, query, limit, SearchOptions::default())
+}
+
+pub fn search_repo_with_options(
+    repo_root: &Path,
+    query: &str,
+    limit: usize,
+    options: SearchOptions,
+) -> Result<SearchSummary> {
     let repo_root = repo_root
         .canonicalize()
         .with_context(|| format!("failed to canonicalize {}", repo_root.display()))?;
@@ -76,7 +93,7 @@ pub fn search_repo(repo_root: &Path, query: &str, limit: usize) -> Result<Search
         ));
     }
 
-    let session = SearchSession::open(repo_root)?;
+    let session = SearchSession::open_with_options(repo_root, options)?;
     session.search(query, limit)
 }
 
@@ -138,6 +155,11 @@ impl SearchSession {
         } else {
             None
         };
+        let reranker = if options.use_reranker {
+            Some(CrossEncoderReranker::new(false)?)
+        } else {
+            None
+        };
         Ok(Self {
             index,
             reader,
@@ -145,6 +167,8 @@ impl SearchSession {
             meta,
             chunks_by_id,
             embeddings,
+            reranker,
+            rerank_limit: options.rerank_limit,
         })
     }
 
@@ -229,6 +253,9 @@ impl SearchSession {
         }
 
         ranked.sort_by(|a, b| b.score.total_cmp(&a.score));
+        if let Some(reranker) = &self.reranker {
+            ranked = rerank_with_cross_encoder(reranker, query, ranked, limit, self.rerank_limit)?;
+        }
         ranked.truncate(limit);
 
         Ok(SearchSummary {
@@ -237,6 +264,51 @@ impl SearchSession {
             analyzed,
         })
     }
+}
+
+fn rerank_with_cross_encoder(
+    reranker: &CrossEncoderReranker,
+    query: &str,
+    mut ranked: Vec<RankedChunk>,
+    result_limit: usize,
+    rerank_limit: usize,
+) -> Result<Vec<RankedChunk>> {
+    if ranked.is_empty() || result_limit == 0 {
+        return Ok(ranked);
+    }
+
+    let rerank_limit = ranked.len().min(result_limit.max(rerank_limit));
+    let chunks = ranked
+        .iter()
+        .take(rerank_limit)
+        .map(|ranked| ranked.chunk.clone())
+        .collect::<Vec<_>>();
+    let reranked = reranker.rerank(query, &chunks)?;
+
+    let mut reordered = Vec::with_capacity(ranked.len());
+    let mut used = vec![false; rerank_limit];
+    for (idx, score) in reranked {
+        let Some(mut result) = ranked.get(idx).cloned() else {
+            continue;
+        };
+        if idx >= used.len() || used[idx] {
+            continue;
+        }
+        used[idx] = true;
+        result.score = score;
+        if !result.reason.contains("cross-encoder reranked") {
+            result.reason = format!("{}; cross-encoder reranked", result.reason);
+        }
+        reordered.push(result);
+    }
+
+    for (idx, result) in ranked.drain(..rerank_limit).enumerate() {
+        if !used[idx] {
+            reordered.push(result);
+        }
+    }
+    reordered.extend(ranked);
+    Ok(reordered)
 }
 
 pub fn rerank(query: &str, chunk: &CodeChunk, tantivy_score: f32) -> RankedChunk {

@@ -9,15 +9,15 @@ Embeddings: disabled
 
 Overall:
   Recall@1:   9.9%
-  Recall@3:   23.4%
+  Recall@3:   22.9%
   Recall@5:   30.7%
   Recall@10:  43.8%
   MRR:        0.19
   nDCG@5:     0.21
   nDCG@10:    0.26
-  p50:        9 ms
-  p95:        14 ms
-  max:        24 ms
+  p50:        17 ms
+  p95:        22 ms
+  max:        26 ms
 
 By style:
   AgentTask              n=21   R@5  33.3%   MRR 0.19   nDCG@5 0.21
@@ -50,32 +50,32 @@ Limit: 10
 Embeddings: enabled
 
 Overall:
-  Recall@1:   35.4%
-  Recall@3:   57.3%
-  Recall@5:   66.1%
-  Recall@10:  75.0%
-  MRR:        0.48
-  nDCG@5:     0.52
-  nDCG@10:    0.55
-  p50:        50 ms
-  p95:        64 ms
-  max:        112 ms
+  Recall@1:   37.5%
+  Recall@3:   65.6%
+  Recall@5:   75.0%
+  Recall@10:  83.3%
+  MRR:        0.53
+  nDCG@5:     0.59
+  nDCG@10:    0.63
+  p50:        58 ms
+  p95:        77 ms
+  max:        125 ms
 
 By style:
-  AgentTask              n=21   R@5  81.0%   MRR 0.54   nDCG@5 0.60
+  AgentTask              n=21   R@5  76.2%   MRR 0.46   nDCG@5 0.52
   Architecture           n=2    R@5  50.0%   MRR 0.20   nDCG@5 0.22
   Capability             n=2    R@5 100.0%   MRR 1.00   nDCG@5 1.00
-  CasualVague            n=38   R@5  39.5%   MRR 0.27   nDCG@5 0.30
-  ChangeTarget           n=53   R@5  69.8%   MRR 0.51   nDCG@5 0.55 
-  ConfigFinding          n=2    R@5  50.0%   MRR 0.50   nDCG@5 0.50
-  DebuggingSymptom       n=26   R@5  76.9%   MRR 0.60   nDCG@5 0.63
+  CasualVague            n=38   R@5  52.6%   MRR 0.38   nDCG@5 0.41
+  ChangeTarget           n=53   R@5  81.1%   MRR 0.59   nDCG@5 0.65
+  ConfigFinding          n=2    R@5 100.0%   MRR 1.00   nDCG@5 1.00
+  DebuggingSymptom       n=26   R@5  76.9%   MRR 0.55   nDCG@5 0.60
   DefinitionQuestion     n=3    R@5 100.0%   MRR 0.83   nDCG@5 0.88
   DocsQuestion           n=2    R@5  50.0%   MRR 0.50   nDCG@5 0.50
-  FuzzyImplementation    n=41   R@5  68.3%   MRR 0.52   nDCG@5 0.55
+  FuzzyImplementation    n=41   R@5  82.9%   MRR 0.59   nDCG@5 0.67
   UsageQuestion          n=2    R@5 100.0%   MRR 0.23   nDCG@5 0.60
 
 By intent:
   architecture           n=1    R@5   0.0%   MRR 0.14   nDCG@5 0.00
-  implementation         n=189  R@5  66.1%   MRR 0.49   nDCG@5 0.53
+  implementation         n=189  R@5  75.1%   MRR 0.54   nDCG@5 0.59
   usage                  n=2    R@5 100.0%   MRR 0.23   nDCG@5 0.60
 ```

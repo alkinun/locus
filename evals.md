@@ -97,14 +97,14 @@ Reranker:   enabled
 Overall:
   Recall@1:   71.4%
   Recall@3:   83.3%
-  Recall@5:   86.5%
-  Recall@10:  93.8%
+  Recall@5:   87.0%
+  Recall@10:  94.3%
   MRR:        0.79
   nDCG@5:     0.81
   nDCG@10:    0.83
-  p50:        3010 ms
-  p95:        3718 ms
-  max:        4096 ms
+  p50:        2589 ms
+  p95:        3103 ms
+  max:        3259 ms
 
 By style:
   AgentTask              n=21   R@5  81.0%   MRR 0.70   nDCG@5 0.72
@@ -116,11 +116,11 @@ By style:
   DebuggingSymptom       n=26   R@5  80.8%   MRR 0.68   nDCG@5 0.72
   DefinitionQuestion     n=3    R@5 100.0%   MRR 1.00   nDCG@5 1.00
   DocsQuestion           n=2    R@5 100.0%   MRR 1.00   nDCG@5 1.00
-  FuzzyImplementation    n=41   R@5  82.9%   MRR 0.80   nDCG@5 0.79
+  FuzzyImplementation    n=41   R@5  85.4%   MRR 0.81   nDCG@5 0.80
   UsageQuestion          n=2    R@5  50.0%   MRR 0.25   nDCG@5 0.50
 
 By intent:
   architecture           n=1    R@5   0.0%   MRR 0.00   nDCG@5 0.00
-  implementation         n=189  R@5  87.3%   MRR 0.80   nDCG@5 0.81
+  implementation         n=189  R@5  87.8%   MRR 0.80   nDCG@5 0.82
   usage                  n=2    R@5  50.0%   MRR 0.25   nDCG@5 0.50
 ```

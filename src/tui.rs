@@ -1,7 +1,7 @@
 use std::io::{self, Stdout};
 use std::panic;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -22,7 +22,6 @@ use crate::query::{AnalyzedQuery, QueryIntent};
 use crate::search::{DEFAULT_RERANK_INPUT_LIMIT, SearchOptions, SearchSession};
 
 const SEARCH_LIMIT: usize = 40;
-const DEBOUNCE: Duration = Duration::from_millis(75);
 
 pub fn run_tui(repo_path: PathBuf) -> Result<()> {
     let repo_path = repo_path
@@ -77,21 +76,15 @@ fn run_loop(
     session: SearchSession,
 ) -> Result<()> {
     let mut app = TuiApp::new(repo_path, session.chunk_count());
-    let mut pending_search_at: Option<Instant> = None;
 
     loop {
         terminal.draw(|frame| render(frame, &mut app))?;
-
-        if pending_search_at.is_some_and(|at| at <= Instant::now()) {
-            app.search(&session);
-            pending_search_at = None;
-        }
 
         if event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
                 match app.handle_key(key) {
                     Action::Quit => break,
-                    Action::SearchChanged => pending_search_at = Some(Instant::now() + DEBOUNCE),
+                    Action::SearchRequested => app.search(&session),
                     Action::None => {}
                 }
             }
@@ -148,29 +141,20 @@ impl TuiApp {
                 self.selected = self.selected.saturating_sub(1);
                 Action::None
             }
+            KeyCode::Enter => Action::SearchRequested,
             KeyCode::Char(ch) => {
                 self.query.push(ch);
-                Action::SearchChanged
+                self.clear_results();
+                Action::None
             }
             KeyCode::Backspace => {
                 self.query.pop();
-                if self.query.trim().len() <= 1 {
-                    self.results.clear();
-                    self.grouped_results = None;
-                    self.analyzed = None;
-                    self.selected = 0;
-                    self.result_scroll = 0;
-                }
-                Action::SearchChanged
+                self.clear_results();
+                Action::None
             }
             KeyCode::Esc => {
                 self.query.clear();
-                self.results.clear();
-                self.grouped_results = None;
-                self.analyzed = None;
-                self.selected = 0;
-                self.result_scroll = 0;
-                self.status.clear();
+                self.clear_results();
                 Action::None
             }
             KeyCode::Tab => {
@@ -202,6 +186,16 @@ impl TuiApp {
             }
             Err(err) => self.status = err.to_string(),
         }
+    }
+
+    fn clear_results(&mut self) {
+        self.results.clear();
+        self.grouped_results = None;
+        self.analyzed = None;
+        self.selected = 0;
+        self.result_scroll = 0;
+        self.last_search_ms = None;
+        self.status.clear();
     }
 
     fn visible_len(&self) -> usize {
@@ -248,7 +242,7 @@ impl TuiApp {
 
 enum Action {
     None,
-    SearchChanged,
+    SearchRequested,
     Quit,
 }
 
@@ -406,7 +400,7 @@ fn render_query(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
     );
     let query = if app.query.is_empty() {
         Line::from(Span::styled(
-            "Start typing to search this repo",
+            "Type a query, then press Enter",
             Style::default().fg(Color::Gray),
         ))
     } else {
@@ -452,7 +446,12 @@ fn render_results(frame: &mut ratatui::Frame<'_>, area: Rect, app: &mut TuiApp) 
         return;
     }
     if app.results.is_empty() {
-        frame.render_widget(Paragraph::new("No results"), inner);
+        let message = if app.analyzed.is_some() {
+            "No results"
+        } else {
+            "Press Enter to search"
+        };
+        frame.render_widget(Paragraph::new(message), inner);
         return;
     }
 
@@ -649,7 +648,7 @@ fn render_preview(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
 
 fn render_footer(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
     let help = if app.status.is_empty() {
-        "Type to search · ↑/↓ select · Tab grouped/flat · Esc clear · Ctrl-C/Ctrl-Q quit"
+        "Enter search · ↑/↓ select · Tab grouped/flat · Esc clear · Ctrl-C/Ctrl-Q quit"
             .to_string()
     } else {
         app.status.clone()
@@ -810,17 +809,27 @@ mod tests {
 
         assert!(matches!(
             app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE)),
-            Action::SearchChanged
+            Action::None
         ));
         assert!(matches!(
             app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE)),
-            Action::SearchChanged
+            Action::None
         ));
         assert!(matches!(
             app.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
-            Action::SearchChanged
+            Action::None
         ));
         assert_eq!(app.query, "jkq");
+    }
+
+    #[test]
+    fn enter_requests_search() {
+        let mut app = TuiApp::new(PathBuf::from("/repo"), 0);
+
+        assert!(matches!(
+            app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Action::SearchRequested
+        ));
     }
 
     #[test]

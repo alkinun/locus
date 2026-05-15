@@ -36,7 +36,7 @@ it uses a three layer approach: lexical search (tantivy), semantic embeddings (f
 |---|---|---|---|---|
 | lexical only | 9.9% | 31% | 0.19 | 19ms |
 | + embeddings | 37.0% | 75% | 0.53 | 59ms |
-| + embeddings + reranker | 71.4% | **87%** | **0.79** | 2.5s |
+| + embeddings + reranker | **71.4%** | **87%** | **0.79** | 2.5s |
 
 the reranker mode is slow but powerful. it is perfect for an agent making one search call.
 

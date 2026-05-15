@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -10,10 +9,10 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::chunker::{chunk_file, detect_language};
 use crate::embeddings::{
-    DEFAULT_EMBEDDING_BATCH_SIZE, EmbeddingProgress, download_embedding_model,
-    embed_chunks_with_progress,
+    DEFAULT_EMBEDDING_BATCH_SIZE, download_embedding_model, embed_chunks_with_progress,
 };
 use crate::model::{ChunkKind, CodeChunk};
+use crate::progress::progress_bar;
 use crate::repo_meta::{RepoMetadata, build_metadata, write_metadata};
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
@@ -115,9 +114,11 @@ pub fn index_repo(path: &Path, download_embedding: bool) -> Result<IndexSummary>
     eprintln!(
         "Embedding {chunks} chunks with JinaEmbeddingsV2BaseCode in batches of {DEFAULT_EMBEDDING_BATCH_SIZE}..."
     );
-    let mut progress_bar = IndexProgressBar::new(chunks);
-    embed_chunks_with_progress(&all_chunks, |progress| progress_bar.draw(progress))?
-        .save(&index_path.join("embeddings.bin"))?;
+    let progress_bar = progress_bar("Embedding", chunks);
+    embed_chunks_with_progress(&all_chunks, |progress| {
+        progress_bar.set_position(progress.embedded_chunks as u64)
+    })?
+    .save(&index_path.join("embeddings.bin"))?;
     progress_bar.finish();
     let mut kind_counts = kind_counts.into_iter().collect::<Vec<_>>();
     kind_counts.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
@@ -129,64 +130,6 @@ pub fn index_repo(path: &Path, download_embedding: bool) -> Result<IndexSummary>
         elapsed: started.elapsed(),
         index_path,
     })
-}
-
-struct IndexProgressBar {
-    total: usize,
-    width: usize,
-    last_draw: Option<Instant>,
-    finished: bool,
-}
-
-impl IndexProgressBar {
-    fn new(total: usize) -> Self {
-        Self {
-            total,
-            width: 28,
-            last_draw: None,
-            finished: false,
-        }
-    }
-
-    fn draw(&mut self, progress: EmbeddingProgress) {
-        let now = Instant::now();
-        if self
-            .last_draw
-            .is_some_and(|last_draw| now.duration_since(last_draw) < Duration::from_millis(80))
-            && progress.embedded_chunks < progress.total_chunks
-        {
-            return;
-        }
-
-        self.last_draw = Some(now);
-        let filled = if self.total == 0 {
-            self.width
-        } else {
-            self.width * progress.embedded_chunks / self.total
-        };
-        let percent = if self.total == 0 {
-            100
-        } else {
-            progress.embedded_chunks * 100 / self.total
-        };
-        let bar = format!(
-            "{}{}",
-            "#".repeat(filled),
-            "-".repeat(self.width.saturating_sub(filled))
-        );
-        eprint!(
-            "\rEmbedding [{bar}] {percent:>3}% ({}/{}) batch {}/{}",
-            progress.embedded_chunks, progress.total_chunks, progress.batch, progress.total_batches
-        );
-        let _ = io::stderr().flush();
-    }
-
-    fn finish(&mut self) {
-        if !self.finished {
-            eprintln!();
-            self.finished = true;
-        }
-    }
 }
 
 pub fn build_schema() -> Schema {

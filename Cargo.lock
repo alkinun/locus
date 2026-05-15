@@ -1650,6 +1650,7 @@ dependencies = [
  "clap",
  "crossterm",
  "fastembed",
+ "indicatif",
  "rand 0.8.6",
  "ratatui",
  "regex",

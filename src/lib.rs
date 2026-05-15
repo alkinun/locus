@@ -6,6 +6,7 @@ pub mod evalgen;
 pub mod indexer;
 pub mod model;
 pub mod output;
+pub mod progress;
 pub mod query;
 pub mod repo_meta;
 pub mod reranker;

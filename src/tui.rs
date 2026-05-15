@@ -29,7 +29,7 @@ pub fn run_tui(repo_path: PathBuf) -> Result<()> {
         .with_context(|| format!("failed to canonicalize {}", repo_path.display()))?;
     if !repo_path.join(".locus").join("index").exists() {
         println!(
-            "No locus index found at {}\n\nRun:\n  locus index {}",
+            "No locus index found\n  path: {}\n\nRun:\n  locus index --path {}",
             repo_path.join(".locus").join("index").display(),
             repo_path.display()
         );
@@ -141,8 +141,30 @@ impl TuiApp {
                 self.selected = self.selected.saturating_sub(1);
                 Action::None
             }
+            KeyCode::PageDown => {
+                let max = self.visible_len().saturating_sub(1);
+                self.selected = (self.selected + 10).min(max);
+                Action::None
+            }
+            KeyCode::PageUp => {
+                self.selected = self.selected.saturating_sub(10);
+                Action::None
+            }
+            KeyCode::Home => {
+                self.selected = 0;
+                Action::None
+            }
+            KeyCode::End => {
+                self.selected = self.visible_len().saturating_sub(1);
+                Action::None
+            }
             KeyCode::Enter => Action::SearchRequested,
             KeyCode::Char(ch) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && ch == 'u' {
+                    self.query.clear();
+                    self.clear_results();
+                    return Action::None;
+                }
                 self.query.push(ch);
                 self.clear_results();
                 Action::None
@@ -376,10 +398,9 @@ fn tui_layout(area: Rect) -> TuiLayout {
 
 fn render_header(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
     let header = format!(
-        "locus · {} · index ready · {} chunks · grouped {}",
-        shorten_path(&app.repo_path, area.width.saturating_sub(45) as usize),
-        app.chunk_count,
-        if app.grouped { "on" } else { "off" }
+        "locus  {}  {} chunks",
+        shorten_path(&app.repo_path, area.width.saturating_sub(24) as usize),
+        app.chunk_count
     );
     frame.render_widget(Paragraph::new(header), area);
 }
@@ -400,12 +421,12 @@ fn render_query(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
     );
     let query = if app.query.is_empty() {
         Line::from(Span::styled(
-            "Type a query, then press Enter",
+            "Search > type a query, then press Enter",
             Style::default().fg(Color::Gray),
         ))
     } else {
         Line::from(vec![
-            Span::styled(" ❯ ", Style::default().fg(Color::Cyan)),
+            Span::styled("Search > ", Style::default().fg(Color::Cyan)),
             Span::styled(app.query.as_str(), Style::default().fg(Color::White)),
         ])
     };
@@ -428,8 +449,17 @@ fn render_results(frame: &mut ratatui::Frame<'_>, area: Rect, app: &mut TuiApp) 
     if area.height == 0 || area.width == 0 {
         return;
     }
+    let title = if app.results.is_empty() {
+        " Results ".to_string()
+    } else {
+        format!(
+            " Results: {} · {} ",
+            app.results.len(),
+            if app.grouped { "grouped" } else { "flat" }
+        )
+    };
     let block = Block::default()
-        .title(" Results ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray));
     let inner = block.inner(area);
@@ -456,9 +486,9 @@ fn render_results(frame: &mut ratatui::Frame<'_>, area: Rect, app: &mut TuiApp) 
     }
 
     let items = if app.grouped {
-        grouped_items(app)
+        grouped_items(app, inner.width as usize)
     } else {
-        flat_items(app)
+        flat_items(app, inner.width as usize)
     };
     app.update_result_scroll(inner.height as usize);
     let mut state = ListState::default().with_offset(app.result_scroll);
@@ -466,7 +496,7 @@ fn render_results(frame: &mut ratatui::Frame<'_>, area: Rect, app: &mut TuiApp) 
     frame.render_stateful_widget(List::new(items), inner, &mut state);
 }
 
-fn flat_items(app: &TuiApp) -> Vec<ListItem<'static>> {
+fn flat_items(app: &TuiApp, width: usize) -> Vec<ListItem<'static>> {
     app.results
         .iter()
         .enumerate()
@@ -475,12 +505,13 @@ fn flat_items(app: &TuiApp) -> Vec<ListItem<'static>> {
                 &VisibleResult::from_ranked(result),
                 idx == app.selected,
                 None,
+                width,
             )
         })
         .collect()
 }
 
-fn grouped_items(app: &TuiApp) -> Vec<ListItem<'static>> {
+fn grouped_items(app: &TuiApp, width: usize) -> Vec<ListItem<'static>> {
     let mut items = Vec::new();
     let mut selected_idx = 0usize;
     if let Some(grouped) = &app.grouped_results {
@@ -506,6 +537,7 @@ fn grouped_items(app: &TuiApp) -> Vec<ListItem<'static>> {
                     &visible,
                     selected_idx == app.selected,
                     Some("  "),
+                    width,
                 ));
                 selected_idx += 1;
             }
@@ -580,21 +612,25 @@ fn result_lines(
     result: &VisibleResult,
     selected: bool,
     prefix: Option<&str>,
+    width: usize,
 ) -> Vec<ListItem<'static>> {
-    let bullet = if selected { "●" } else { " " };
+    let bullet = if selected { ">" } else { " " };
     let prefix = prefix.unwrap_or("");
+    let path_width = width.saturating_sub(prefix.len() + 39).clamp(18, 72);
     let symbol = result.symbol.as_deref().unwrap_or("-");
+    let location = format!(
+        "{}:{}-{}",
+        result.file_path, result.start_line, result.end_line
+    );
     let row = format!(
-        "{prefix}{bullet} {:<28} {:<7} {:<22} {:>5.1}",
-        format!(
-            "{}:{}-{}",
-            result.file_path, result.start_line, result.end_line
-        ),
+        "{prefix}{bullet} {:<path_width$} {:<7} {:<18} {:>5.1}",
+        truncate(&location, path_width),
         kind_label(result.kind),
-        truncate(symbol, 22),
+        truncate(symbol, 18),
         result.score
     );
-    let reason = format!("{prefix}  {}", truncate(&result.reason, 92));
+    let reason_width = width.saturating_sub(prefix.len() + 2).max(24);
+    let reason = format!("{prefix}  {}", truncate(&result.reason, reason_width));
     let style = if selected {
         Style::default()
             .fg(Color::White)
@@ -620,7 +656,7 @@ fn render_preview(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
     let title = selected
         .as_ref()
         .map(|result| {
-            format!(
+            let title = format!(
                 " Preview: {}:{}-{}{} ",
                 result.file_path,
                 result.start_line,
@@ -630,7 +666,8 @@ fn render_preview(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
                     .as_ref()
                     .map(|symbol| format!(" · {symbol}"))
                     .unwrap_or_default()
-            )
+            );
+            truncate(&title, area.width.saturating_sub(2) as usize)
         })
         .unwrap_or_else(|| " Preview ".to_string());
     let block = Block::default()
@@ -647,14 +684,20 @@ fn render_preview(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
 }
 
 fn render_footer(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
-    let help = if app.status.is_empty() {
-        "Enter search · ↑/↓ select · Tab grouped/flat · Esc clear · Ctrl-C/Ctrl-Q quit"
-            .to_string()
+    let footer = if app.status.is_empty() {
+        let summary = if let Some(ms) = app.last_search_ms {
+            format!("{} results in {ms} ms", app.results.len())
+        } else {
+            "ready".to_string()
+        };
+        format!(
+            "{summary} · Enter search · Up/Down select · PgUp/PgDn jump · Tab grouped · Esc/Ctrl-U clear · Ctrl-C quit"
+        )
     } else {
         app.status.clone()
     };
     frame.render_widget(
-        Paragraph::new(help).style(Style::default().fg(if app.status.is_empty() {
+        Paragraph::new(footer).style(Style::default().fg(if app.status.is_empty() {
             Color::DarkGray
         } else {
             Color::Red

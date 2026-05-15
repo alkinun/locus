@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use locus::cli::{Cli, Command};
+use locus::cli::{Cli, Command, OutputFormat};
 use locus::eval::{EvalOptions, print_human_report, run_eval};
 use locus::evalgen::{GenerateEvalOptions, generate_eval_dataset};
 use locus::indexer::index_repo;
@@ -19,9 +19,11 @@ fn main() -> Result<()> {
         match command {
             Command::Index {
                 path,
+                legacy_path,
                 download_embedding,
                 download_reranker,
             } => {
+                let path = legacy_path.unwrap_or(path);
                 if download_reranker {
                     eprintln!("Downloading jina-reranker-v1-turbo-en if needed...");
                     download_reranker_model()?;
@@ -33,17 +35,21 @@ fn main() -> Result<()> {
                 query,
                 path,
                 limit,
+                format,
                 json,
                 grouped,
+                snippets,
+                no_embedding,
                 rerank,
                 rerank_limit,
             } => {
+                let json = json || format == OutputFormat::Json;
                 let summary = search_repo_with_options(
                     &path,
                     &query,
                     limit,
                     SearchOptions {
-                        use_embeddings: true,
+                        use_embeddings: !no_embedding,
                         use_reranker: rerank,
                         rerank_limit,
                     },
@@ -62,7 +68,7 @@ fn main() -> Result<()> {
                 } else if grouped {
                     print_human_grouped_results(&summary.results, summary.elapsed.as_millis());
                 } else {
-                    print_human_results(&summary.results, summary.elapsed.as_millis());
+                    print_human_results(&summary.results, summary.elapsed.as_millis(), snippets);
                 }
             }
             Command::GenerateEval {
@@ -106,18 +112,20 @@ fn main() -> Result<()> {
                 path,
                 dataset,
                 limit,
-                embedding,
+                embedding: _,
                 no_embedding,
                 rerank,
                 rerank_limit,
+                format,
                 json,
                 failures,
             } => {
+                let json = json || format == OutputFormat::Json;
                 let report = run_eval(EvalOptions {
                     path,
                     dataset,
                     limit,
-                    use_embeddings: embedding && !no_embedding,
+                    use_embeddings: !no_embedding,
                     use_reranker: rerank,
                     rerank_limit,
                     failures,

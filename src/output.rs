@@ -7,61 +7,70 @@ const MAX_SNIPPET_LINES: usize = 60;
 const MAX_SNIPPET_BYTES: usize = 8 * 1024;
 
 pub fn print_index_summary(summary: &crate::indexer::IndexSummary) {
-    println!(
-        "Indexed {} files, {} chunks, {} ms",
-        summary.files,
-        summary.chunks,
-        summary.elapsed.as_millis()
-    );
+    println!("Index complete");
+    println!("  files:    {}", summary.files);
+    println!("  chunks:   {}", summary.chunks);
+    println!("  elapsed:  {} ms", summary.elapsed.as_millis());
+    println!("  index:    {}", summary.index_path.display());
     if !summary.kind_counts.is_empty() {
+        println!();
         println!("Kinds:");
         for (kind, count) in &summary.kind_counts {
-            println!("  {}: {}", kind.as_str(), count);
+            println!("  {:14} {}", kind.as_str(), count);
         }
     }
+    println!();
     println!("Repo metadata:");
     println!(
-        "  languages: {}",
+        "  languages:         {}",
         summary.repo_metadata.vocabulary.languages.len()
     );
     println!(
-        "  extensions: {}",
+        "  extensions:        {}",
         summary.repo_metadata.vocabulary.extensions.len()
     );
     println!(
-        "  symbols: {}",
+        "  symbols:           {}",
         summary.repo_metadata.vocabulary.symbols.len()
     );
     println!(
-        "  headings: {}",
+        "  headings:          {}",
         summary.repo_metadata.vocabulary.headings.len()
     );
     println!(
         "  symbol references: {}",
         summary.repo_metadata.symbol_graph.references.len()
     );
-    println!("Index: {}", summary.index_path.display());
 }
 
-pub fn print_human_results(results: &[RankedChunk], elapsed_ms: u128) {
+pub fn print_human_results(results: &[RankedChunk], elapsed_ms: u128, show_snippets: bool) {
+    println!("Search results");
+    if results.is_empty() {
+        println!("  no matches");
+        println!();
+        println!("Found 0 results in {elapsed_ms} ms");
+        return;
+    }
+
     for (idx, result) in results.iter().enumerate() {
         let symbol = result.chunk.symbol.as_deref().unwrap_or("-");
         println!(
-            "{}. {}:{}-{}  score={:.2}  kind={}  symbol={}",
+            "{:>2}. {}:{}-{}  {}  {}  score={:.2}",
             idx + 1,
             result.chunk.file_path.display(),
             result.chunk.start_line,
             result.chunk.end_line,
-            result.score,
             result.chunk.kind.as_str(),
-            symbol
+            symbol,
+            result.score,
         );
-        println!("   language: {}", result.chunk.language);
-        println!("   reason: {}", result.reason);
-        println!();
-        println!("{}", indent(&truncate_snippet(&result.chunk.text)));
-        println!();
+        println!("    {}", truncate_single_line(&result.reason, 120));
+        if show_snippets {
+            println!();
+            println!("{}", indent(&truncate_snippet(&result.chunk.text)));
+        }
     }
+    println!();
     println!("Found {} results in {} ms", results.len(), elapsed_ms);
 }
 
@@ -96,11 +105,16 @@ pub fn group_ranked_results(results: &[RankedChunk]) -> GroupedResults {
 
 pub fn print_human_grouped_results(results: &[RankedChunk], elapsed_ms: u128) {
     let grouped = group_ranked_results(results);
-    print_group("Primary matches", &grouped.primary);
-    print_group("Supporting definitions", &grouped.supporting);
+    println!("Search results");
+    print_group("Primary", &grouped.primary);
+    print_group("Supporting", &grouped.supporting);
     print_group("Tests", &grouped.tests);
     print_group("Docs", &grouped.docs);
     print_group("Config", &grouped.config);
+    if results.is_empty() {
+        println!("  no matches");
+    }
+    println!();
     println!("Found {} results in {} ms", results.len(), elapsed_ms);
 }
 
@@ -113,21 +127,20 @@ fn print_group(title: &str, results: &[SearchResult]) {
     if results.is_empty() {
         return;
     }
+    println!();
     println!("{title}");
     for result in results {
         println!(
-            "{}. {}:{}-{}  score={:.2}  kind={}  symbol={}",
+            "{:>2}. {}:{}-{}  {}  {}  score={:.2}",
             result.rank,
             result.file_path,
             result.start_line,
             result.end_line,
-            result.score,
             result.kind.as_str(),
-            result.symbol.as_deref().unwrap_or("-")
+            result.symbol.as_deref().unwrap_or("-"),
+            result.score,
         );
-        println!("   language: {}", result.language);
-        println!("   reason: {}", result.reason);
-        println!();
+        println!("    {}", truncate_single_line(&result.reason, 120));
     }
 }
 
@@ -183,6 +196,15 @@ fn indent(text: &str) -> String {
         .map(|line| format!("   {line}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn truncate_single_line(text: &str, max_chars: usize) -> String {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() <= max_chars {
+        return text;
+    }
+    let keep = max_chars.saturating_sub(1);
+    format!("{}…", text.chars().take(keep).collect::<String>())
 }
 
 #[cfg(test)]

@@ -32,11 +32,11 @@ it uses a three layer approach: lexical search (tantivy), semantic embeddings (f
 
 192 queries. developer questions across 11 query styles.
 
-| mode | recall@5 | mrr | p50 |
-|---|---|---|---|
-| lexical only | 31% | 0.19 | 19ms |
-| + embeddings | 75% | 0.53 | 59ms |
-| + embeddings + reranker | **87%** | **0.79** | 2.5s |
+| mode | recall@1 | recall@5 | mrr | p50 |
+|---|---|---|---|---|
+| lexical only | 9.9% | 31% | 0.19 | 19ms |
+| + embeddings | 37.0% | 75% | 0.53 | 59ms |
+| + embeddings + reranker | 71.4% | **87%** | **0.79** | 2.5s |
 
 the reranker mode is slow but powerful. it is perfect for an agent making one search call.
 

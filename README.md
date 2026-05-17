@@ -26,7 +26,7 @@ cargo install --path .
 
 ---
 
-#### what it does
+### what it does
 
 you ask locus something like:
 

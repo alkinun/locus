@@ -64,12 +64,12 @@ jobs:
       - name: Build with cross
         if: matrix.use_cross
         env:
-          ORT_CACHE_DIR: ${{ github.workspace }}/target/ort-cache
+          ORT_CACHE_DIR: /target/ort-cache
         run: cross build --locked --release --target ${{ matrix.target }}
       - name: Build with cargo
         if: ${{ !matrix.use_cross }}
         env:
-          ORT_CACHE_DIR: ${{ github.workspace }}/target/ort-cache
+          ORT_CACHE_DIR: target/ort-cache
         run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Package
         shell: bash

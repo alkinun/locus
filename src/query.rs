@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AnalyzedQuery {
     pub raw: String,
     pub normalized_terms: Vec<String>,
@@ -8,7 +10,8 @@ pub struct AnalyzedQuery {
     pub intent: QueryIntent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum QueryIntent {
     FindImplementation,
     FindDefinition,

@@ -14,6 +14,7 @@ use clap::{ArgAction, Parser, Subcommand, ValueEnum};
   locus
   locus --path ~/work/project
   locus index --path ~/work/project
+  locus mcp --path ~/work/project
   locus search \"where are access tokens refreshed\" --path ~/work/project
   locus search \"tests for chunking\" --grouped --format json")]
 pub struct Cli {
@@ -50,6 +51,24 @@ pub enum Command {
         /// Download the reranker model before indexing.
         #[arg(long = "download-reranker")]
         download_reranker: bool,
+    },
+    /// Run a stdio MCP server for coding agents.
+    Mcp {
+        /// Repository path the MCP server searches by default.
+        #[arg(short, long, value_name = "PATH", default_value = ".")]
+        path: PathBuf,
+
+        /// Search without vector embeddings unless a tool call overrides it.
+        #[arg(long = "no-embedding", action = ArgAction::SetTrue)]
+        no_embedding: bool,
+
+        /// Rerank top candidates by default unless a tool call overrides it.
+        #[arg(long)]
+        rerank: bool,
+
+        /// Number of candidates to send to the reranker by default.
+        #[arg(long = "rerank-limit", default_value_t = DEFAULT_RERANK_INPUT_LIMIT)]
+        rerank_limit: usize,
     },
     /// Generate a synthetic retrieval eval dataset from indexed chunks.
     GenerateEval {
@@ -225,5 +244,33 @@ mod tests {
         };
         assert_eq!(format, OutputFormat::Json);
         assert_eq!(path, PathBuf::from("/repo"));
+    }
+
+    #[test]
+    fn mcp_accepts_path_and_search_defaults() {
+        let cli = Cli::try_parse_from([
+            "locus",
+            "mcp",
+            "--path",
+            "/repo",
+            "--no-embedding",
+            "--rerank",
+            "--rerank-limit",
+            "12",
+        ])
+        .unwrap();
+        let Some(Command::Mcp {
+            path,
+            no_embedding,
+            rerank,
+            rerank_limit,
+        }) = cli.command
+        else {
+            panic!("expected mcp command");
+        };
+        assert_eq!(path, PathBuf::from("/repo"));
+        assert!(no_embedding);
+        assert!(rerank);
+        assert_eq!(rerank_limit, 12);
     }
 }

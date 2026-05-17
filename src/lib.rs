@@ -4,6 +4,7 @@ pub mod embeddings;
 pub mod eval;
 pub mod evalgen;
 pub mod indexer;
+pub mod mcp;
 pub mod model;
 pub mod output;
 pub mod progress;

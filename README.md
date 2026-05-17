@@ -81,7 +81,28 @@ locus search "tests for chunking" --grouped --format json
 
 # search a specific directory
 locus search "error handling in the parser" --path /path/to/repo
+
+# run as a stdio mcp server for coding agents
+locus mcp --path /path/to/repo
 ```
+
+---
+
+### mcp server
+
+`locus mcp` starts a stdio mcp server that a coding agent can use to search the repo it is working in. configure the agent to launch:
+
+```bash
+locus mcp --path /path/to/repo
+```
+
+it exposes three tools:
+
+- `search_codebase`: search indexed code chunks by natural language or symbol.
+- `index_codebase`: build or rebuild `.locus/index` for the repo.
+- `index_status`: check whether the repo has a usable locus index.
+
+the mcp server writes protocol messages only to stdout. it indexes progress and diagnostics go to stderr.
 
 ---
 

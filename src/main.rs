@@ -4,6 +4,7 @@ use locus::cli::{Cli, Command, OutputFormat};
 use locus::eval::{EvalOptions, print_human_report, run_eval};
 use locus::evalgen::{GenerateEvalOptions, generate_eval_dataset};
 use locus::indexer::index_repo;
+use locus::mcp::{McpServerConfig, run_stdio_server};
 use locus::output::{
     group_ranked_results, print_human_grouped_results, print_human_results, print_index_summary,
     print_json_grouped_results, print_json_results,
@@ -30,6 +31,19 @@ fn main() -> Result<()> {
                 }
                 let summary = index_repo(&path, download_embedding)?;
                 print_index_summary(&summary);
+            }
+            Command::Mcp {
+                path,
+                no_embedding,
+                rerank,
+                rerank_limit,
+            } => {
+                run_stdio_server(McpServerConfig {
+                    repo_root: path,
+                    default_use_embeddings: !no_embedding,
+                    default_use_reranker: rerank,
+                    default_rerank_limit: rerank_limit,
+                })?;
             }
             Command::Search {
                 query,

@@ -36,7 +36,7 @@ jobs:
           </head>
           <body>
           EOF
-          marked README.md >> docs/index.html
+          npx --yes marked README.md >> docs/index.html
           echo "</body></html>" >> docs/index.html
 
       - name: Commit

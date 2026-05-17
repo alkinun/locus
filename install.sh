@@ -55,6 +55,12 @@ case "$(uname -m)" in
         ;;
 esac
 
+if [ "$os" = "apple-darwin" ] && [ "$arch" = "x86_64" ]; then
+    echo "error: macOS Intel is not supported by the current release binaries" >&2
+    echo "       build from source with: cargo install --git https://github.com/${repo}.git" >&2
+    exit 1
+fi
+
 target="${arch}-${os}"
 asset="${binary}-${target}.tar.gz"
 

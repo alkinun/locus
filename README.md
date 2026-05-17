@@ -12,6 +12,8 @@ its built for the kinds of fuzzy queries developers and coding agents ask.
 curl -fsSL https://raw.githubusercontent.com/alkinun/locus/main/install.sh | sh
 ```
 
+prebuilt release binaries are published for linux x86_64, linux arm64, and apple silicon macs.
+
 install a specific release:
 
 ```bash

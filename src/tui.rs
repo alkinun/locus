@@ -22,6 +22,7 @@ use crate::query::{AnalyzedQuery, QueryIntent};
 use crate::search::{DEFAULT_RERANK_INPUT_LIMIT, SearchOptions, SearchSession};
 
 const SEARCH_LIMIT: usize = 40;
+const QUERY_PROMPT: &str = "Search > ";
 
 pub fn run_tui(repo_path: PathBuf) -> Result<()> {
     let repo_path = repo_path
@@ -97,6 +98,7 @@ fn run_loop(
 struct TuiApp {
     repo_path: PathBuf,
     query: String,
+    query_cursor: usize,
     analyzed: Option<AnalyzedQuery>,
     results: Vec<RankedChunk>,
     grouped_results: Option<GroupedResults>,
@@ -113,6 +115,7 @@ impl TuiApp {
         Self {
             repo_path,
             query: String::new(),
+            query_cursor: 0,
             analyzed: None,
             results: Vec::new(),
             grouped_results: None,
@@ -132,6 +135,22 @@ impl TuiApp {
             return Action::Quit;
         }
         match key.code {
+            KeyCode::Left => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_query_cursor_to_previous_word();
+                } else {
+                    self.move_query_cursor_left();
+                }
+                Action::None
+            }
+            KeyCode::Right => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_query_cursor_to_next_word();
+                } else {
+                    self.move_query_cursor_right();
+                }
+                Action::None
+            }
             KeyCode::Down => {
                 let max = self.visible_len().saturating_sub(1);
                 self.selected = (self.selected + 1).min(max);
@@ -151,31 +170,54 @@ impl TuiApp {
                 Action::None
             }
             KeyCode::Home => {
-                self.selected = 0;
+                self.query_cursor = 0;
                 Action::None
             }
             KeyCode::End => {
-                self.selected = self.visible_len().saturating_sub(1);
+                self.query_cursor = self.query.len();
                 Action::None
             }
             KeyCode::Enter => Action::SearchRequested,
             KeyCode::Char(ch) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && ch == 'u' {
-                    self.query.clear();
-                    self.clear_results();
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    match ch.to_ascii_lowercase() {
+                        'a' => self.query_cursor = 0,
+                        'b' => self.move_query_cursor_left(),
+                        'd' => self.delete_query_next_char(),
+                        'e' => self.query_cursor = self.query.len(),
+                        'f' => self.move_query_cursor_right(),
+                        'h' => self.delete_query_previous_char(),
+                        'k' => self.delete_query_after_cursor(),
+                        'u' => self.delete_query_before_cursor(),
+                        'w' => self.delete_query_previous_word(),
+                        _ => {}
+                    }
                     return Action::None;
                 }
-                self.query.push(ch);
-                self.clear_results();
+                if key.modifiers.difference(KeyModifiers::SHIFT).is_empty() {
+                    self.insert_query_char(ch);
+                }
                 Action::None
             }
             KeyCode::Backspace => {
-                self.query.pop();
-                self.clear_results();
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.delete_query_previous_word();
+                } else {
+                    self.delete_query_previous_char();
+                }
+                Action::None
+            }
+            KeyCode::Delete => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.delete_query_next_word();
+                } else {
+                    self.delete_query_next_char();
+                }
                 Action::None
             }
             KeyCode::Esc => {
                 self.query.clear();
+                self.query_cursor = 0;
                 self.clear_results();
                 Action::None
             }
@@ -218,6 +260,85 @@ impl TuiApp {
         self.result_scroll = 0;
         self.last_search_ms = None;
         self.status.clear();
+    }
+
+    fn insert_query_char(&mut self, ch: char) {
+        self.query.insert(self.query_cursor, ch);
+        self.query_cursor += ch.len_utf8();
+        self.clear_results();
+    }
+
+    fn delete_query_before_cursor(&mut self) {
+        if self.query_cursor == 0 {
+            return;
+        }
+        self.query.drain(..self.query_cursor);
+        self.query_cursor = 0;
+        self.clear_results();
+    }
+
+    fn delete_query_after_cursor(&mut self) {
+        if self.query_cursor >= self.query.len() {
+            return;
+        }
+        self.query.drain(self.query_cursor..);
+        self.clear_results();
+    }
+
+    fn delete_query_previous_char(&mut self) {
+        let Some(previous) = previous_char_boundary(&self.query, self.query_cursor) else {
+            return;
+        };
+        self.query.drain(previous..self.query_cursor);
+        self.query_cursor = previous;
+        self.clear_results();
+    }
+
+    fn delete_query_next_char(&mut self) {
+        let Some(next) = next_char_boundary(&self.query, self.query_cursor) else {
+            return;
+        };
+        self.query.drain(self.query_cursor..next);
+        self.clear_results();
+    }
+
+    fn delete_query_previous_word(&mut self) {
+        let start = previous_word_boundary(&self.query, self.query_cursor);
+        if start == self.query_cursor {
+            return;
+        }
+        self.query.drain(start..self.query_cursor);
+        self.query_cursor = start;
+        self.clear_results();
+    }
+
+    fn delete_query_next_word(&mut self) {
+        let end = next_word_boundary(&self.query, self.query_cursor);
+        if end == self.query_cursor {
+            return;
+        }
+        self.query.drain(self.query_cursor..end);
+        self.clear_results();
+    }
+
+    fn move_query_cursor_left(&mut self) {
+        if let Some(previous) = previous_char_boundary(&self.query, self.query_cursor) {
+            self.query_cursor = previous;
+        }
+    }
+
+    fn move_query_cursor_right(&mut self) {
+        if let Some(next) = next_char_boundary(&self.query, self.query_cursor) {
+            self.query_cursor = next;
+        }
+    }
+
+    fn move_query_cursor_to_previous_word(&mut self) {
+        self.query_cursor = previous_word_boundary(&self.query, self.query_cursor);
+    }
+
+    fn move_query_cursor_to_next_word(&mut self) {
+        self.query_cursor = next_word_boundary(&self.query, self.query_cursor);
     }
 
     fn visible_len(&self) -> usize {
@@ -405,6 +526,19 @@ fn render_header(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
     frame.render_widget(Paragraph::new(header), area);
 }
 
+fn visible_query_window(query: &str, cursor: usize, width: usize) -> (String, usize) {
+    if width == 0 {
+        return (String::new(), 0);
+    }
+    let cursor_char = query[..cursor].chars().count();
+    let start_char = cursor_char.saturating_sub(width.saturating_sub(1));
+    let end_char = start_char.saturating_add(width);
+    let start = byte_index_for_char(query, start_char);
+    let end = byte_index_for_char(query, end_char);
+    let visible = query[start..end].to_string();
+    (visible, cursor_char.saturating_sub(start_char))
+}
+
 fn render_query(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -419,6 +553,11 @@ fn render_query(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
             .saturating_add(area.height)
             .saturating_sub(input_y.saturating_add(1)),
     );
+    let (visible_query, cursor_offset) = visible_query_window(
+        &app.query,
+        app.query_cursor,
+        area.width.saturating_sub(QUERY_PROMPT.len() as u16) as usize,
+    );
     let query = if app.query.is_empty() {
         Line::from(Span::styled(
             "Search > type a query, then press Enter",
@@ -426,8 +565,8 @@ fn render_query(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
         ))
     } else {
         Line::from(vec![
-            Span::styled("Search > ", Style::default().fg(Color::Cyan)),
-            Span::styled(app.query.as_str(), Style::default().fg(Color::White)),
+            Span::styled(QUERY_PROMPT, Style::default().fg(Color::Cyan)),
+            Span::styled(visible_query.as_str(), Style::default().fg(Color::White)),
         ])
     };
     let summary = app
@@ -439,10 +578,72 @@ fn render_query(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
         Paragraph::new(query).style(Style::default().bg(Color::Rgb(28, 32, 36))),
         input_area,
     );
+    if !app.query.is_empty() {
+        frame.set_cursor_position((
+            input_area.x.saturating_add(
+                (QUERY_PROMPT.len() + cursor_offset)
+                    .min(input_area.width.saturating_sub(1) as usize) as u16,
+            ),
+            input_area.y,
+        ));
+    }
     frame.render_widget(
         Paragraph::new(summary).style(Style::default().fg(Color::DarkGray)),
         summary_area,
     );
+}
+
+fn byte_index_for_char(input: &str, char_index: usize) -> usize {
+    input
+        .char_indices()
+        .nth(char_index)
+        .map(|(idx, _)| idx)
+        .unwrap_or(input.len())
+}
+
+fn previous_char_boundary(input: &str, cursor: usize) -> Option<usize> {
+    input[..cursor].char_indices().last().map(|(idx, _)| idx)
+}
+
+fn next_char_boundary(input: &str, cursor: usize) -> Option<usize> {
+    input[cursor..]
+        .chars()
+        .next()
+        .map(|ch| cursor + ch.len_utf8())
+}
+
+fn previous_word_boundary(input: &str, cursor: usize) -> usize {
+    let mut start = cursor;
+    while let Some(previous) = previous_char_boundary(input, start) {
+        if !input[previous..start].chars().all(char::is_whitespace) {
+            break;
+        }
+        start = previous;
+    }
+    while let Some(previous) = previous_char_boundary(input, start) {
+        if input[previous..start].chars().all(char::is_whitespace) {
+            break;
+        }
+        start = previous;
+    }
+    start
+}
+
+fn next_word_boundary(input: &str, cursor: usize) -> usize {
+    let mut end = cursor;
+    while let Some(next) = next_char_boundary(input, end) {
+        if !input[end..next].chars().all(char::is_whitespace) {
+            break;
+        }
+        end = next;
+    }
+    while let Some(next) = next_char_boundary(input, end) {
+        if input[end..next].chars().all(char::is_whitespace) {
+            break;
+        }
+        end = next;
+    }
+    end
 }
 
 fn render_results(frame: &mut ratatui::Frame<'_>, area: Rect, app: &mut TuiApp) {
@@ -691,7 +892,7 @@ fn render_footer(frame: &mut ratatui::Frame<'_>, area: Rect, app: &TuiApp) {
             "ready".to_string()
         };
         format!(
-            "{summary} · Enter search · Up/Down select · PgUp/PgDn jump · Tab grouped · Esc/Ctrl-U clear · Ctrl-C quit"
+            "{summary} · Enter search · Left/Right edit · Ctrl-Left/Right word · Ctrl-Bksp delete word · Up/Down select · Tab grouped · Ctrl-C quit"
         )
     } else {
         app.status.clone()
@@ -863,6 +1064,86 @@ mod tests {
             Action::None
         ));
         assert_eq!(app.query, "jkq");
+        assert_eq!(app.query_cursor, app.query.len());
+    }
+
+    #[test]
+    fn left_and_right_arrows_move_query_cursor_for_midline_edits() {
+        let mut app = TuiApp::new(PathBuf::from("/repo"), 0);
+        for ch in "helo".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        }
+
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
+
+        assert_eq!(app.query, "hello!");
+        assert_eq!(app.query_cursor, app.query.len());
+    }
+
+    #[test]
+    fn control_arrows_move_by_words() {
+        let mut app = TuiApp::new(PathBuf::from("/repo"), 0);
+        for ch in "alpha beta gamma".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        }
+
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL));
+        assert_eq!(app.query_cursor, "alpha beta ".len());
+
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL));
+        assert_eq!(app.query_cursor, "alpha ".len());
+
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::CONTROL));
+        assert_eq!(app.query_cursor, "alpha beta".len());
+    }
+
+    #[test]
+    fn control_backspace_deletes_previous_word() {
+        let mut app = TuiApp::new(PathBuf::from("/repo"), 0);
+        for ch in "alpha beta gamma".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        }
+
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL));
+
+        assert_eq!(app.query, "alpha beta ");
+        assert_eq!(app.query_cursor, app.query.len());
+    }
+
+    #[test]
+    fn delete_and_control_delete_remove_text_after_cursor() {
+        let mut app = TuiApp::new(PathBuf::from("/repo"), 0);
+        for ch in "alpha beta gamma".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        }
+        app.query_cursor = "alpha ".len();
+
+        app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
+        assert_eq!(app.query, "alpha eta gamma");
+
+        app.handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::CONTROL));
+        assert_eq!(app.query, "alpha  gamma");
+        assert_eq!(app.query_cursor, "alpha ".len());
+    }
+
+    #[test]
+    fn edits_keep_utf8_boundaries() {
+        let mut app = TuiApp::new(PathBuf::from("/repo"), 0);
+        for ch in "naive café".chars() {
+            app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        }
+
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.query, "naive caf");
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('é'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL));
+        app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL));
+        assert_eq!(app.query, "café");
+        assert_eq!(app.query_cursor, 0);
     }
 
     #[test]

@@ -47,6 +47,20 @@ full eval breakdown in [evals.md](./evals.md).
 ### install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/alkinun/locus/main/install.sh | sh
+```
+
+the installer downloads the latest release binary for linux or macos and installs it to `~/.local/bin`.
+
+to install a specific release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alkinun/locus/main/install.sh | LOCUS_VERSION=v0.1.0 sh
+```
+
+from source:
+
+```bash
 cargo install --path .
 ```
 

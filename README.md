@@ -1,4 +1,4 @@
-locus.
+### locus.
 
 mind readingly accurate, blazingly fast codebase search, written in pure rust.
 
@@ -6,7 +6,27 @@ its built for the kinds of fuzzy queries developers and coding agents ask.
 
 ---
 
-### what it does
+### install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alkinun/locus/main/install.sh | sh
+```
+
+install a specific release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alkinun/locus/main/install.sh | LOCUS_VERSION=v0.1.0 sh
+```
+
+from source:
+
+```bash
+cargo install --path .
+```
+
+---
+
+#### what it does
 
 you ask locus something like:
 
@@ -41,28 +61,6 @@ it uses a three layer approach: lexical search (tantivy), semantic embeddings (f
 the reranker mode is slow but powerful. it is perfect for an agent making one search call.
 
 full eval breakdown in [evals.md](./evals.md).
-
----
-
-### install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/alkinun/locus/main/install.sh | sh
-```
-
-the installer downloads the latest release binary for linux or macos and installs it to `~/.local/bin`.
-
-to install a specific release:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/alkinun/locus/main/install.sh | LOCUS_VERSION=v0.1.0 sh
-```
-
-from source:
-
-```bash
-cargo install --path .
-```
 
 ---
 

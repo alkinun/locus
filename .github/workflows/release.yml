@@ -84,6 +84,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - name: Download artifacts
         uses: actions/download-artifact@v7
         with:
@@ -101,8 +105,9 @@ jobs:
             echo "No release assets found" >&2
             exit 1
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${files[@]}" --clobber
+          repo="${{ github.repository }}"
+          if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber --repo "$repo"
           else
-            gh release create "$TAG" "${files[@]}" --verify-tag --title "$TAG" --generate-notes
+            gh release create "$TAG" "${files[@]}" --verify-tag --title "$TAG" --generate-notes --repo "$repo"
           fi

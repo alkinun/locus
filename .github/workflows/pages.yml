@@ -1,0 +1,47 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install md-to-html
+        run: npm install -g marked
+
+      - name: Generate index.html
+        run: |
+          cat <<'EOF' > docs/index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <title>locus</title>
+            <style>
+              body { background: #111; color: #ccc; font-family: monospace; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+              a { color: #aaa; }
+              pre { background: #1a1a1a; padding: 12px; overflow-x: auto; }
+              code { background: #1a1a1a; padding: 2px 5px; }
+              table { border-collapse: collapse; }
+              th, td { border: 1px solid #333; padding: 6px 12px; }
+              th { background: #1a1a1a; }
+              hr { border: none; border-top: 1px solid #333; }
+            </style>
+          </head>
+          <body>
+          EOF
+          marked README.md >> docs/index.html
+          echo "</body></html>" >> docs/index.html
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html
+          git diff --staged --quiet || git commit -m "chore: sync docs from readme" && git push

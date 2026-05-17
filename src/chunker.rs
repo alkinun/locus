@@ -16,6 +16,9 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
         Some("ts") | Some("tsx") => Some("typescript"),
         Some("js") | Some("jsx") => Some("javascript"),
         Some("py") => Some("python"),
+        Some("go") => Some("go"),
+        Some("java") => Some("java"),
+        Some("c") | Some("h") => Some("c"),
         Some("md") => Some("markdown"),
         Some("toml") | Some("json") => Some("config"),
         _ if path.file_name().and_then(|name| name.to_str()) == Some(".gitignore") => {
@@ -182,6 +185,9 @@ fn tree_sitter_language(language: &str) -> Option<Language> {
         "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         "javascript" => Some(tree_sitter_javascript::LANGUAGE.into()),
         "python" => Some(tree_sitter_python::LANGUAGE.into()),
+        "go" => Some(tree_sitter_go::LANGUAGE.into()),
+        "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        "c" => Some(tree_sitter_c::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -206,6 +212,9 @@ fn collect_syntax_nodes<'a>(
         "rust" => rust_chunk(kind, node, source),
         "typescript" | "javascript" => js_chunk(kind, node, source),
         "python" => python_chunk(kind, node, source),
+        "go" => go_chunk(kind, node, source),
+        "java" => java_chunk(kind, node, source),
+        "c" => c_chunk(kind, node, source),
         _ => (None, None),
     };
 
@@ -312,12 +321,93 @@ fn python_chunk(kind: &str, node: Node<'_>, source: &[u8]) -> (Option<ChunkKind>
     }
 }
 
+fn go_chunk(kind: &str, node: Node<'_>, source: &[u8]) -> (Option<ChunkKind>, Option<String>) {
+    match kind {
+        "function_declaration" => {
+            let symbol = node_symbol(node, source);
+            let chunk_kind = if symbol.as_deref().is_some_and(is_go_test_name) {
+                ChunkKind::Test
+            } else {
+                ChunkKind::Function
+            };
+            (Some(chunk_kind), symbol)
+        }
+        "method_declaration" => (Some(ChunkKind::Method), node_symbol(node, source)),
+        "type_declaration" => go_type_chunk(node, source),
+        _ => (None, None),
+    }
+}
+
+fn java_chunk(kind: &str, node: Node<'_>, source: &[u8]) -> (Option<ChunkKind>, Option<String>) {
+    match kind {
+        "class_declaration" => (Some(ChunkKind::Class), node_symbol(node, source)),
+        "interface_declaration" | "annotation_type_declaration" => {
+            (Some(ChunkKind::Trait), node_symbol(node, source))
+        }
+        "enum_declaration" => (Some(ChunkKind::Enum), node_symbol(node, source)),
+        "record_declaration" => (Some(ChunkKind::Struct), node_symbol(node, source)),
+        "method_declaration" => {
+            let symbol = node_symbol(node, source);
+            let chunk_kind = if symbol
+                .as_deref()
+                .is_some_and(|name| name.starts_with("test"))
+                || is_java_test(node, source)
+            {
+                ChunkKind::Test
+            } else {
+                ChunkKind::Method
+            };
+            (Some(chunk_kind), symbol)
+        }
+        "constructor_declaration" | "compact_constructor_declaration" => {
+            (Some(ChunkKind::Method), node_symbol(node, source))
+        }
+        _ => (None, None),
+    }
+}
+
+fn c_chunk(kind: &str, node: Node<'_>, source: &[u8]) -> (Option<ChunkKind>, Option<String>) {
+    match kind {
+        "function_definition" => {
+            let symbol = c_function_symbol(node, source);
+            let chunk_kind = if symbol
+                .as_deref()
+                .is_some_and(|name| name.starts_with("test_"))
+            {
+                ChunkKind::Test
+            } else {
+                ChunkKind::Function
+            };
+            (Some(chunk_kind), symbol)
+        }
+        "struct_specifier" | "union_specifier" if node.child_by_field_name("body").is_some() => {
+            (Some(ChunkKind::Struct), node_symbol(node, source))
+        }
+        "enum_specifier" if node.child_by_field_name("body").is_some() => {
+            (Some(ChunkKind::Enum), node_symbol(node, source))
+        }
+        _ => (None, None),
+    }
+}
+
 fn is_rust_test(node: Node<'_>, source: &[u8]) -> bool {
     let start = node.start_byte().saturating_sub(160);
     let prefix = std::str::from_utf8(&source[start..node.start_byte()]).unwrap_or_default();
     prefix.contains("#[test]")
         || prefix.contains("#[tokio::test]")
         || prefix.contains("#[async_std::test]")
+}
+
+fn is_java_test(node: Node<'_>, source: &[u8]) -> bool {
+    let start = node.start_byte().saturating_sub(240);
+    let prefix = std::str::from_utf8(&source[start..node.start_byte()]).unwrap_or_default();
+    prefix.contains("@Test")
+        || prefix.contains("@ParameterizedTest")
+        || prefix.contains("@RepeatedTest")
+}
+
+fn is_go_test_name(name: &str) -> bool {
+    name.starts_with("Test") || name.starts_with("Benchmark") || name.starts_with("Example")
 }
 
 fn rust_impl_symbol(node: Node<'_>, source: &[u8]) -> String {
@@ -329,6 +419,35 @@ fn rust_impl_symbol(node: Node<'_>, source: &[u8]) -> String {
         .trim_end_matches('{')
         .trim()
         .to_string()
+}
+
+fn node_symbol(node: Node<'_>, source: &[u8]) -> Option<String> {
+    node.child_by_field_name("name")
+        .map(|name| node_text(name, source).to_string())
+}
+
+fn go_type_chunk(node: Node<'_>, source: &[u8]) -> (Option<ChunkKind>, Option<String>) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if !matches!(child.kind(), "type_spec" | "type_alias") {
+            continue;
+        }
+        let symbol = node_symbol(child, source);
+        let chunk_kind = child
+            .child_by_field_name("type")
+            .map(|type_node| match type_node.kind() {
+                "interface_type" => ChunkKind::Trait,
+                _ => ChunkKind::Struct,
+            })
+            .unwrap_or(ChunkKind::Struct);
+        return (Some(chunk_kind), symbol);
+    }
+    (None, None)
+}
+
+fn c_function_symbol(node: Node<'_>, source: &[u8]) -> Option<String> {
+    node.child_by_field_name("declarator")
+        .and_then(|declarator| last_identifier_descendant(declarator, source))
 }
 
 fn js_decl_symbol(node: Node<'_>, source: &[u8]) -> Option<String> {
@@ -473,11 +592,13 @@ fn collect_callees(
     own_symbol: Option<&str>,
     callees: &mut Vec<String>,
 ) {
-    if matches!(node.kind(), "call_expression" | "call")
-        && let Some(target) = node
+    if let Some(target) = match node.kind() {
+        "call_expression" | "call" => node
             .child_by_field_name("function")
-            .or_else(|| node.named_child(0))
-        && let Some(name) = callee_name(target, source)
+            .or_else(|| node.named_child(0)),
+        "method_invocation" => Some(node),
+        _ => None,
+    } && let Some(name) = callee_name(target, source)
     {
         push_unique_callee(callees, name, own_symbol);
     }
@@ -497,7 +618,7 @@ fn collect_callees(
 
 fn callee_name(node: Node<'_>, source: &[u8]) -> Option<String> {
     match node.kind() {
-        "identifier" | "field_identifier" | "property_identifier" => {
+        "identifier" | "field_identifier" | "property_identifier" | "type_identifier" => {
             Some(node_text(node, source).to_string())
         }
         "attribute" | "field_expression" => node
@@ -506,6 +627,23 @@ fn callee_name(node: Node<'_>, source: &[u8]) -> Option<String> {
             .map(|child| node_text(child, source).to_string())
             .or_else(|| Some(normalize_member_name(node_text(node, source)))),
         "member_expression" => Some(normalize_member_name(node_text(node, source))),
+        "selector_expression" => node
+            .child_by_field_name("field")
+            .map(|child| node_text(child, source).to_string())
+            .or_else(|| Some(normalize_member_name(node_text(node, source)))),
+        "method_invocation" => {
+            let name = node.child_by_field_name("name")?;
+            let name = node_text(name, source);
+            node.child_by_field_name("object")
+                .map(|object| {
+                    format!(
+                        "{}.{}",
+                        normalize_member_name(node_text(object, source)),
+                        name
+                    )
+                })
+                .or_else(|| Some(name.to_string()))
+        }
         "scoped_identifier" | "generic_function" => last_identifier_descendant(node, source),
         _ if node.named_child_count() > 0 => node
             .named_child(0)
@@ -517,7 +655,7 @@ fn callee_name(node: Node<'_>, source: &[u8]) -> Option<String> {
 fn last_identifier_descendant(node: Node<'_>, source: &[u8]) -> Option<String> {
     if matches!(
         node.kind(),
-        "identifier" | "field_identifier" | "property_identifier"
+        "identifier" | "field_identifier" | "property_identifier" | "type_identifier"
     ) {
         return Some(node_text(node, source).to_string());
     }
@@ -547,6 +685,8 @@ fn symbol_for_node(node: Node<'_>, source: &[u8]) -> Option<String> {
         .or_else(|| match node.kind() {
             "impl_item" => Some(rust_impl_symbol(node, source)),
             "lexical_declaration" | "variable_declaration" => js_decl_symbol(node, source),
+            "function_definition" => c_function_symbol(node, source),
+            "type_declaration" => go_type_chunk(node, source).1,
             _ => None,
         })
 }
@@ -764,6 +904,20 @@ fn detect_symbol_line(language: &str, line: &str) -> Option<String> {
             r"^def\s+([A-Za-z_][A-Za-z0-9_]*)",
             r"^class\s+([A-Za-z_][A-Za-z0-9_]*)",
         ],
+        "go" => &[
+            r"^func\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)",
+            r"^type\s+([A-Za-z_][A-Za-z0-9_]*)\s+(?:struct|interface)\b",
+        ],
+        "java" => &[
+            r"^(?:public|protected|private|static|final|abstract|synchronized|native|strictfp|\s)+\s*(?:class|interface|enum|record)\s+([A-Za-z_][A-Za-z0-9_]*)",
+            r"^(?:public|protected|private|static|final|abstract|synchronized|native|strictfp|\s)+\s*(?:<[^>]+>\s*)?[A-Za-z_][A-Za-z0-9_<>, ?\[\].]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+            r"^(?:class|interface|enum|record)\s+([A-Za-z_][A-Za-z0-9_]*)",
+        ],
+        "c" => &[
+            r"^(?:[A-Za-z_][A-Za-z0-9_]*\s+)+\*?([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+            r"^(?:typedef\s+)?struct\s+([A-Za-z_][A-Za-z0-9_]*)",
+            r"^(?:typedef\s+)?enum\s+([A-Za-z_][A-Za-z0-9_]*)",
+        ],
         "markdown" => &[r"^#{1,2}\s+(.+)$"],
         _ => &[],
     };
@@ -802,6 +956,10 @@ mod tests {
         assert_eq!(detect_language(Path::new("app.tsx")), Some("typescript"));
         assert_eq!(detect_language(Path::new("script.js")), Some("javascript"));
         assert_eq!(detect_language(Path::new("main.py")), Some("python"));
+        assert_eq!(detect_language(Path::new("main.go")), Some("go"));
+        assert_eq!(detect_language(Path::new("Search.java")), Some("java"));
+        assert_eq!(detect_language(Path::new("search.c")), Some("c"));
+        assert_eq!(detect_language(Path::new("search.h")), Some("c"));
         assert_eq!(detect_language(Path::new("README.md")), Some("markdown"));
         assert_eq!(detect_language(Path::new("image.png")), None);
     }
@@ -836,6 +994,18 @@ mod tests {
         assert_eq!(
             detect_symbol("python", "class TokenRefresher:"),
             Some("TokenRefresher".into())
+        );
+        assert_eq!(
+            detect_symbol("go", "func refreshAccessToken() {}"),
+            Some("refreshAccessToken".into())
+        );
+        assert_eq!(
+            detect_symbol("java", "public void refreshAccessToken() {}"),
+            Some("refreshAccessToken".into())
+        );
+        assert_eq!(
+            detect_symbol("c", "int refresh_access_token(void) {"),
+            Some("refresh_access_token".into())
         );
         assert_eq!(
             detect_symbol("markdown", "## Auth Refresh"),
@@ -939,6 +1109,153 @@ class Searcher:
         assert!(
             chunks.iter().any(|chunk| chunk.kind == ChunkKind::Class
                 && chunk.symbol.as_deref() == Some("Searcher"))
+        );
+    }
+
+    #[test]
+    fn go_extracts_functions_methods_structs_interfaces_and_tests() {
+        let source = r#"
+package search
+
+type Searcher struct{}
+
+type Runner interface {
+    Run() error
+}
+
+func RankResults() int {
+    return score()
+}
+
+func (s *Searcher) Search() []string {
+    return renderResults()
+}
+
+func TestSearch(t *testing.T) {
+    Search()
+}
+"#;
+        let chunks = chunk_file(
+            Path::new("/repo"),
+            Path::new("/repo/search_test.go"),
+            source,
+        );
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Struct
+                && chunk.symbol.as_deref() == Some("Searcher"))
+        );
+        assert!(chunks.iter().any(
+            |chunk| chunk.kind == ChunkKind::Trait && chunk.symbol.as_deref() == Some("Runner")
+        ));
+        assert!(chunks.iter().any(|chunk| chunk.kind == ChunkKind::Function
+            && chunk.symbol.as_deref() == Some("RankResults")));
+        let rank_results = chunks
+            .iter()
+            .find(|chunk| chunk.symbol.as_deref() == Some("RankResults"))
+            .expect("RankResults chunk");
+        assert_eq!(rank_results.callees, ["score"]);
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Method
+                && chunk.symbol.as_deref() == Some("Search"))
+        );
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Test
+                && chunk.symbol.as_deref() == Some("TestSearch"))
+        );
+    }
+
+    #[test]
+    fn java_extracts_types_methods_and_tests() {
+        let source = r#"
+public class Searcher {
+    public void search() {
+        client.search();
+        renderResults();
+    }
+
+    @Test
+    public void testSearch() {
+        search();
+    }
+}
+
+interface Runner {
+    void run();
+}
+
+enum Mode {
+    Fast
+}
+"#;
+        let chunks = chunk_file(Path::new("/repo"), Path::new("/repo/Searcher.java"), source);
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Class
+                && chunk.symbol.as_deref() == Some("Searcher"))
+        );
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Method
+                && chunk.symbol.as_deref() == Some("search"))
+        );
+        let search = chunks
+            .iter()
+            .find(|chunk| chunk.symbol.as_deref() == Some("search"))
+            .expect("search chunk");
+        assert_eq!(search.callees, ["client.search", "renderResults"]);
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Test
+                && chunk.symbol.as_deref() == Some("testSearch"))
+        );
+        assert!(chunks.iter().any(
+            |chunk| chunk.kind == ChunkKind::Trait && chunk.symbol.as_deref() == Some("Runner")
+        ));
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.kind == ChunkKind::Enum
+                    && chunk.symbol.as_deref() == Some("Mode"))
+        );
+    }
+
+    #[test]
+    fn c_extracts_functions_structs_enums_and_tests() {
+        let source = r#"
+struct Searcher {
+    int limit;
+};
+
+enum Mode {
+    MODE_FAST
+};
+
+int rank_results(void) {
+    return score();
+}
+
+void test_search(void) {
+    rank_results();
+}
+"#;
+        let chunks = chunk_file(Path::new("/repo"), Path::new("/repo/search.c"), source);
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Struct
+                && chunk.symbol.as_deref() == Some("Searcher"))
+        );
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.kind == ChunkKind::Enum
+                    && chunk.symbol.as_deref() == Some("Mode"))
+        );
+        assert!(chunks.iter().any(|chunk| chunk.kind == ChunkKind::Function
+            && chunk.symbol.as_deref() == Some("rank_results")));
+        let rank_results = chunks
+            .iter()
+            .find(|chunk| chunk.symbol.as_deref() == Some("rank_results"))
+            .expect("rank_results chunk");
+        assert_eq!(rank_results.callees, ["score"]);
+        assert!(
+            chunks.iter().any(|chunk| chunk.kind == ChunkKind::Test
+                && chunk.symbol.as_deref() == Some("test_search"))
         );
     }
 

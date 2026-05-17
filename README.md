@@ -108,7 +108,7 @@ the mcp server writes protocol messages only to stdout. it indexes progress and 
 
 ### how it works
 
-locus indexes your codebase using treesitter to parse code into semantically meaningful chunks. it understands function boundaries, class definitions, impls, structs, enums, traits, tests, and modules in rust, python, javascript, and typescript. it also indexes markdown headings and small config files.
+locus indexes your codebase using treesitter to parse code into semantically meaningful chunks. it understands function boundaries, class definitions, impls, structs, enums, traits, tests, and modules in rust, python, javascript, typescript, go, java, and c. it also indexes markdown headings and small config files.
 
 at query time it combines:
 
@@ -122,7 +122,7 @@ no data leaves your machine during indexing or search. the index lives next to y
 
 ### supported languages
 
-rust · python · javascript · typescript · markdown · config
+rust · python · javascript · typescript · go · java · c · markdown · config
 
 more coming.
 

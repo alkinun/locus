@@ -103,6 +103,9 @@ Supported files:
 - Rust: `.rs`
 - TypeScript / JavaScript: `.ts`, `.tsx`, `.js`, `.jsx`
 - Python: `.py`
+- Go: `.go`
+- Java: `.java`
+- C: `.c`, `.h`
 - Markdown: `.md`
 "#,
         )

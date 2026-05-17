@@ -604,6 +604,9 @@ fn language_aliases(language: &str) -> &'static [&'static str] {
         "python" => &["python", "py"],
         "typescript" => &["typescript", "ts", "tsx"],
         "javascript" => &["javascript", "js", "jsx"],
+        "go" => &["go", "golang"],
+        "java" => &["java"],
+        "c" => &["c"],
         "markdown" => &["markdown", "md"],
         _ => &[],
     }
